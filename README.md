@@ -139,8 +139,6 @@ Integration tests run in a real VSCode extension host via `@vscode/test-cli` and
 
 ### Typical development session
 
-hunkwise uses the proposed `editorInsets` API, so it must run in an Extension Development Host with proposed API enabled (the `.vscode/launch.json` "Run Extension" config already passes `--enable-proposed-api=molon.hunkwise`).
-
 ```bash
 npm install                 # once
 npm run watch               # leave running — recompiles src/ on save
@@ -148,8 +146,6 @@ npm run watch               # leave running — recompiles src/ on save
 # ...edit code, save (watch recompiles)...
 # in the dev host window: Cmd/Ctrl+R (Developer: Reload Window) to load the change
 ```
-
-Extension code and webview assets (`media/panel.*`, inset HTML) do not hot-reload — reload the dev host window to pick up changes.
 
 Set debug breakpoints in your `.ts` files in the main window; they hit when the code runs in the dev host.
 
