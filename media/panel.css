@@ -620,7 +620,7 @@ body {
 
 /* ── File status badges ── */
 .file-status-badge {
-  font-size: var(--vscode-editor-font-size, 13px);
+  font-size: calc(var(--vscode-editor-font-size, 13px) - 2px);
   font-weight: 700;
   padding: 0 3px;
   border-radius: 2px;

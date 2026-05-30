@@ -52,9 +52,8 @@ body { background: transparent; position: relative; }
   display: flex; align-items: center; gap: 4px;
 }
 .nav {
-  position: absolute;
-  top: 3px; right: 32px;
-  display: flex; align-items: center; gap: 8px;
+  display: flex; align-items: center; gap: 6px;
+  margin-left: 24px;
 }
 .btn-nav {
   min-width: 22px;
@@ -97,10 +96,10 @@ button:hover { background: var(--vscode-button-secondaryHoverBackground, #45494e
 <div class="bar">
 <button class="btn-accept" onclick="accept()">✓ Accept</button>
 <button class="btn-discard" onclick="discard()">↺ Discard</button>
-</div>
 <div class="nav">
-<button class="btn-nav" title="Previous change" onclick="prev()">↑</button>
-<button class="btn-nav" title="Next change" onclick="next()">↓</button>
+<button class="btn-nav" title="Previous change" onclick="prev()">▲</button>
+<button class="btn-nav" title="Next change" onclick="next()">▼</button>
+</div>
 </div>
 <script>
 const vscode = acquireVsCodeApi();
