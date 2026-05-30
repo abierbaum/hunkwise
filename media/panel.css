@@ -587,6 +587,34 @@ body {
   background: rgba(248, 81, 73, 0.15);
 }
 
+/* ── Review footer (Reset Baseline) ── */
+.review-footer {
+  display: flex;
+  gap: 6px;
+  padding: 8px 10px;
+  margin-top: 6px;
+  border-top: 1px solid var(--vscode-panel-border, rgba(128, 128, 128, 0.2));
+  position: sticky;
+  bottom: 0;
+  background: var(--vscode-sideBar-background, var(--vscode-panel-background));
+}
+
+.btn-reset-baseline {
+  flex: 1;
+  border-radius: 3px;
+  cursor: pointer;
+  font-size: 11px;
+  font-family: var(--vscode-font-family);
+  padding: 5px 7px;
+  white-space: nowrap;
+  background: rgba(79, 161, 246, 0.1);
+  color: #9cc7f0;
+  border: 1px solid rgba(79, 161, 246, 0.3);
+}
+.btn-reset-baseline:hover {
+  background: rgba(79, 161, 246, 0.18);
+}
+
 /* ── File status badges ── */
 .file-status-badge {
   font-size: 8px;

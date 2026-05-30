@@ -51,6 +51,16 @@ body { background: transparent; position: relative; }
   top: 3px; left: 4px;
   display: flex; align-items: center; gap: 4px;
 }
+.nav {
+  position: absolute;
+  top: 3px; right: 4px;
+  display: flex; align-items: center; gap: 4px;
+}
+.btn-nav {
+  min-width: 22px;
+  justify-content: center;
+  font-size: 12px;
+}
 button {
   background: var(--vscode-button-secondaryBackground, #3a3d41);
   color: var(--vscode-button-secondaryForeground, #cccccc);
@@ -80,10 +90,16 @@ button:hover { background: var(--vscode-button-secondaryHoverBackground, #45494e
 <button class="btn-accept" onclick="accept()">✓ Accept</button>
 <button class="btn-discard" onclick="discard()">↺ Discard</button>
 </div>
+<div class="nav">
+<button class="btn-nav" title="Previous change" onclick="prev()">↑</button>
+<button class="btn-nav" title="Next change" onclick="next()">↓</button>
+</div>
 <script>
 const vscode = acquireVsCodeApi();
 function accept() { vscode.postMessage({ command: 'accept', filePath: ${JSON.stringify(filePath)}, hunkId: ${JSON.stringify(hunkId)} }); }
 function discard() { vscode.postMessage({ command: 'discard', filePath: ${JSON.stringify(filePath)}, hunkId: ${JSON.stringify(hunkId)} }); }
+function prev() { vscode.postMessage({ command: 'prev', filePath: ${JSON.stringify(filePath)}, hunkId: ${JSON.stringify(hunkId)} }); }
+function next() { vscode.postMessage({ command: 'next', filePath: ${JSON.stringify(filePath)}, hunkId: ${JSON.stringify(hunkId)} }); }
 </script>
 </body></html>`;
 }
@@ -104,11 +120,11 @@ function insetCacheKey(afterLine: number, height: number): string {
 export class DecorationManager {
   // editorKey → ordered list of insets for that editor
   private insets: Map<string, HunkInset[]> = new Map();
-  private onAction: ((command: 'accept' | 'discard', filePath: string, hunkId: string) => void) | undefined;
+  private onAction: ((command: 'accept' | 'discard' | 'prev' | 'next', filePath: string, hunkId: string) => void) | undefined;
 
   constructor(
     private stateManager: StateManager,
-    onAction?: (command: 'accept' | 'discard', filePath: string, hunkId: string) => void,
+    onAction?: (command: 'accept' | 'discard' | 'prev' | 'next', filePath: string, hunkId: string) => void,
   ) {
     this.onAction = onAction;
   }
@@ -295,7 +311,7 @@ export class DecorationManager {
       ) as vscode.WebviewEditorInset;
       inset.webview.html = html;
       const disposable = inset.webview.onDidReceiveMessage((msg: any) => {
-        if (msg.command === 'accept' || msg.command === 'discard') {
+        if (msg.command === 'accept' || msg.command === 'discard' || msg.command === 'prev' || msg.command === 'next') {
           this.onAction?.(msg.command, msg.filePath, msg.hunkId);
         }
       });
