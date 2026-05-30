@@ -53,22 +53,30 @@ body { background: transparent; position: relative; }
 }
 .nav {
   position: absolute;
-  top: 3px; right: 4px;
-  display: flex; align-items: center; gap: 4px;
+  top: 3px; right: 32px;
+  display: flex; align-items: center; gap: 8px;
 }
 .btn-nav {
   min-width: 22px;
   justify-content: center;
-  font-size: 12px;
+  font-size: var(--vscode-editor-font-size, 13px);
+  background: var(--vscode-button-secondaryBackground, #3a3d41);
+  color: var(--vscode-button-secondaryForeground, #cccccc);
+}
+.btn-nav:hover {
+  background: var(--vscode-button-secondaryHoverBackground, #45494e);
+  color: var(--vscode-button-foreground, #ffffff);
 }
 button {
   background: var(--vscode-button-secondaryBackground, #3a3d41);
   color: var(--vscode-button-secondaryForeground, #cccccc);
   border: 1px solid var(--vscode-button-border, rgba(128,128,128,0.4));
   border-radius: 2px;
-  padding: 0 6px; font-size: 10px;
+  padding: 1px 6px;
+  font-size: var(--vscode-editor-font-size, 13px);
   font-family: var(--vscode-font-family, sans-serif);
-  cursor: pointer; height: 20px; line-height: 1;
+  line-height: normal;
+  cursor: pointer;
   display: inline-flex; align-items: center; white-space: nowrap;
 }
 button:hover { background: var(--vscode-button-secondaryHoverBackground, #45494e); }
