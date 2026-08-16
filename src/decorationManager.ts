@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import * as path from 'path';
 import { StateManager } from './stateManager';
 import { computeHunks, hunkId } from './diffEngine';
 import { log } from './log';
@@ -103,6 +104,7 @@ button:hover { background: var(--vscode-button-secondaryHoverBackground, #45494e
 </div>
 <script>
 const vscode = acquireVsCodeApi();
+vscode.postMessage({ command: 'ready', hunkId: ${JSON.stringify(hunkId)} });
 function accept() { vscode.postMessage({ command: 'accept', filePath: ${JSON.stringify(filePath)}, hunkId: ${JSON.stringify(hunkId)} }); }
 function discard() { vscode.postMessage({ command: 'discard', filePath: ${JSON.stringify(filePath)}, hunkId: ${JSON.stringify(hunkId)} }); }
 function prev() { vscode.postMessage({ command: 'prev', filePath: ${JSON.stringify(filePath)}, hunkId: ${JSON.stringify(hunkId)} }); }
@@ -270,6 +272,10 @@ export class DecorationManager {
     // Reuse existing insets when cache keys match to avoid flicker
     const existing = this.insets.get(editorKey) ?? [];
     const nextInsets: HunkInset[] = [];
+    const perfStart = Date.now();
+    let reusedCount = 0;
+    let createdCount = 0;
+    let disposedCount = 0;
 
     for (let i = 0; i < specs.length; i++) {
       const spec = specs[i];
@@ -280,10 +286,12 @@ export class DecorationManager {
         prev.inset.webview.html = spec.html;
         nextInsets.push(prev);
         existing[i] = undefined as any; // mark as consumed
+        reusedCount++;
       } else {
         // Position changed or inset was disposed by VSCode — recreate
         const created = this.makeInset(editorKey, editor, spec.afterLine, spec.height, spec.html, key);
         if (created) nextInsets.push(created);
+        createdCount++;
       }
     }
 
@@ -293,7 +301,12 @@ export class DecorationManager {
         leftover.disposeListener.dispose();
         leftover.disposable.dispose();
         if (!leftover.disposed) leftover.inset.dispose();
+        disposedCount++;
       }
+    }
+
+    if (specs.length > 0 || disposedCount > 0) {
+      log(`PERF_MEASURE refresh(${path.basename(filePath)}): hunks=${parsed.length} insets reused=${reusedCount} created=${createdCount} disposed=${disposedCount} sync=${Date.now() - perfStart}ms`);
     }
 
     editor.setDecorations(addedLineDecoration, addedRanges);
@@ -318,6 +331,11 @@ export class DecorationManager {
       ) as vscode.WebviewEditorInset;
       inset.webview.html = html;
       const disposable = inset.webview.onDidReceiveMessage((msg: any) => {
+        if (msg.command === 'ready') {
+          // Sent on every webview load/reload
+          log(`PERF_MEASURE ready(${msg.hunkId}): action bar rendered`);
+          return;
+        }
         if (msg.command === 'accept' || msg.command === 'discard' || msg.command === 'prev' || msg.command === 'next') {
           this.onAction?.(msg.command, msg.filePath, msg.hunkId);
         }
