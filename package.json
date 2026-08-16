@@ -47,9 +47,51 @@
         "command": "hunkwise.reviewAllDiffs",
         "title": "hunkwise: Review All Changes (Multi-Diff)",
         "icon": "$(diff-multiple)"
+      },
+      {
+        "command": "hunkwise.diffAcceptFile",
+        "title": "hunkwise: Accept All Changes in File",
+        "icon": "$(check-all)"
+      },
+      {
+        "command": "hunkwise.diffDiscardFile",
+        "title": "hunkwise: Discard All Changes in File",
+        "icon": "$(discard)"
+      },
+      {
+        "command": "hunkwise.diffPrevFile",
+        "title": "hunkwise: Previous Pending File",
+        "icon": "$(arrow-up)"
+      },
+      {
+        "command": "hunkwise.diffNextFile",
+        "title": "hunkwise: Next Pending File",
+        "icon": "$(arrow-down)"
       }
     ],
     "menus": {
+      "editor/title": [
+        {
+          "command": "hunkwise.diffPrevFile",
+          "when": "hunkwise.activeDiff",
+          "group": "navigation@1"
+        },
+        {
+          "command": "hunkwise.diffNextFile",
+          "when": "hunkwise.activeDiff",
+          "group": "navigation@2"
+        },
+        {
+          "command": "hunkwise.diffAcceptFile",
+          "when": "hunkwise.activeDiff",
+          "group": "navigation@3"
+        },
+        {
+          "command": "hunkwise.diffDiscardFile",
+          "when": "hunkwise.activeDiff",
+          "group": "navigation@4"
+        }
+      ],
       "view/title": [
         {
           "command": "hunkwise.refresh",
