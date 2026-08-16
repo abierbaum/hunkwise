@@ -329,6 +329,10 @@ function renderSettingsScreen(state) {
   diffButtonsRow.appendChild(diffButtonsDescRow);
   appearanceSection.appendChild(diffButtonsRow);
 
+  // ── Experiments ──
+  const experimentsSection = el('div', 'settings-section');
+  experimentsSection.appendChild(el('div', 'settings-section-title', 'Experiments'));
+
   // Dynamic rendering performance
   const dynRenderRow = el('label', 'settings-check-row');
   dynRenderRow.appendChild(el('span', 'settings-check-label', 'Dynamic rendering performance (experimental)'));
@@ -343,7 +347,7 @@ function renderSettingsScreen(state) {
   dynRenderDescRow.appendChild(dynRenderCheckbox);
   dynRenderDescRow.appendChild(el('span', 'settings-check-desc', 'Render inline controls in the viewport first and stream the rest in as you scroll. Much faster in files with many changes; may cause slight content shifts when scrolling up.'));
   dynRenderRow.appendChild(dynRenderDescRow);
-  appearanceSection.appendChild(dynRenderRow);
+  experimentsSection.appendChild(dynRenderRow);
 
   // Performance trace logging
   const perfTraceRow = el('label', 'settings-check-row');
@@ -359,7 +363,7 @@ function renderSettingsScreen(state) {
   perfTraceDescRow.appendChild(perfTraceCheckbox);
   perfTraceDescRow.appendChild(el('span', 'settings-check-desc', 'Write PERF_MEASURE rendering timings to the Hunkwise output channel'));
   perfTraceRow.appendChild(perfTraceDescRow);
-  appearanceSection.appendChild(perfTraceRow);
+  experimentsSection.appendChild(perfTraceRow);
   appearanceSection.appendChild(rotationRow);
 
   // ── Exclude Patterns ──
@@ -412,6 +416,7 @@ function renderSettingsScreen(state) {
   body.appendChild(appearanceSection);
   body.appendChild(patternSection);
   body.appendChild(gitignoreSection);
+  body.appendChild(experimentsSection);
 
   // ── Disable ──
   const disableSection = el('div', 'settings-section settings-section-danger');
