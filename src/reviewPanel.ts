@@ -25,6 +25,9 @@ interface PanelState {
   showInlineDecorations: boolean;
   showDiffHeaderButtons: boolean;
   dynamicRendering: boolean;
+  showPerfTrace: boolean;
+  /** Whether VSCode's diffEditor.codeLens setting is enabled (needed for Accept/Discard in diff views) */
+  diffCodeLensEnabled: boolean;
   totalFiles: number;
   totalAdded: number;
   totalRemoved: number;
@@ -181,6 +184,8 @@ export class ReviewPanel implements vscode.WebviewViewProvider {
       showInlineDecorations: this.stateManager.showInlineDecorations,
       showDiffHeaderButtons: this.stateManager.showDiffHeaderButtons,
       dynamicRendering: this.stateManager.dynamicRendering,
+      showPerfTrace: this.stateManager.showPerfTrace,
+      diffCodeLensEnabled: vscode.workspace.getConfiguration('diffEditor').get<boolean>('codeLens', false),
       totalFiles: files.length,
       totalAdded,
       totalRemoved,
@@ -285,6 +290,12 @@ export class ReviewPanel implements vscode.WebviewViewProvider {
         if (msg.value !== undefined) {
           this.stateManager.setDynamicRendering(msg.value as boolean);
           this.onStateChanged();
+        }
+        break;
+      case 'setShowPerfTrace':
+        if (msg.value !== undefined) {
+          this.stateManager.setShowPerfTrace(msg.value as boolean);
+          this.refresh();
         }
         break;
       case 'openFile':

@@ -15,6 +15,7 @@ interface Settings {
   showInlineDecorations: boolean;
   showDiffHeaderButtons: boolean;
   dynamicRendering: boolean;
+  showPerfTrace: boolean;
 }
 
 const DEFAULT_SETTINGS: Settings = {
@@ -26,6 +27,7 @@ const DEFAULT_SETTINGS: Settings = {
   showInlineDecorations: true,
   showDiffHeaderButtons: true,
   dynamicRendering: true,
+  showPerfTrace: false,
 };
 
 /**
@@ -109,6 +111,9 @@ export class HunkwiseGit {
         dynamicRendering: typeof parsed.dynamicRendering === 'boolean'
           ? parsed.dynamicRendering
           : DEFAULT_SETTINGS.dynamicRendering,
+        showPerfTrace: typeof parsed.showPerfTrace === 'boolean'
+          ? parsed.showPerfTrace
+          : DEFAULT_SETTINGS.showPerfTrace,
       };
     } catch {
       return { ...DEFAULT_SETTINGS, ignorePatterns: [...DEFAULT_SETTINGS.ignorePatterns] };

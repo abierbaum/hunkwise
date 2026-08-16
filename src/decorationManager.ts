@@ -382,7 +382,7 @@ export class DecorationManager {
       }
     }
 
-    if (specs.length > 0 || disposedCount > 0) {
+    if (this.stateManager.showPerfTrace && (specs.length > 0 || disposedCount > 0)) {
       log(`PERF_MEASURE refresh(${path.basename(filePath)}): hunks=${parsed.length} insets reused=${reusedCount} reloaded=${reloadedCount} created=${createdCount} deferred=${deferred.length} disposed=${disposedCount} sync=${Date.now() - perfStart}ms`);
     }
 
@@ -422,7 +422,9 @@ export class DecorationManager {
       if (created) list.push(created);
     }
     this.insets.set(editorKey, list);
-    log(`PERF_MEASURE promote(${editorKey.split('/').pop()}): ${promote.length} inset(s) promoted, ${pending.queue.length} still queued`);
+    if (this.stateManager.showPerfTrace) {
+      log(`PERF_MEASURE promote(${editorKey.split('/').pop()}): ${promote.length} inset(s) promoted, ${pending.queue.length} still queued`);
+    }
 
     if (pending.queue.length === 0) {
       if (pending.timer !== undefined) clearTimeout(pending.timer);
@@ -482,8 +484,10 @@ export class DecorationManager {
         pending.timer = setTimeout(drain, BATCH_DELAY);
       } else if (pending.queue.length === 0) {
         this.pendingCreations.delete(editorKey);
-        log(`PERF_MEASURE drain(${editorKey.split('/').pop()}): offscreen inset creation complete`);
-      } else {
+        if (this.stateManager.showPerfTrace) {
+          log(`PERF_MEASURE drain(${editorKey.split('/').pop()}): offscreen inset creation complete`);
+        }
+      } else if (this.stateManager.showPerfTrace) {
         log(`PERF_MEASURE drain(${editorKey.split('/').pop()}): ${pending.queue.length} above-viewport inset(s) parked for scroll promotion`);
       }
     };
@@ -508,7 +512,9 @@ export class DecorationManager {
       const disposable = inset.webview.onDidReceiveMessage((msg: any) => {
         if (msg.command === 'ready') {
           // Sent on every webview load/reload
-          log(`PERF_MEASURE ready(${entry.hunkId}): action bar rendered`);
+          if (this.stateManager.showPerfTrace) {
+            log(`PERF_MEASURE ready(${entry.hunkId}): action bar rendered`);
+          }
           return;
         }
         if (msg.command === 'accept' || msg.command === 'discard' || msg.command === 'prev' || msg.command === 'next') {
