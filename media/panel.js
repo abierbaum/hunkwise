@@ -3,7 +3,7 @@
 const vscode = /** @type {any} */ (globalThis).acquireVsCodeApi();
 const app = document.getElementById('app');
 
-/** @type {{ enabled: boolean, ignorePatterns: string[], respectGitignore: boolean, clearOnBranchSwitch: boolean, quoteRotationInterval: number, useDiffEditor: boolean, showInlineDecorations: boolean, showDiffHeaderButtons: boolean, totalFiles: number, totalAdded: number, totalRemoved: number, files: any[] } | null} */
+/** @type {{ enabled: boolean, ignorePatterns: string[], respectGitignore: boolean, clearOnBranchSwitch: boolean, quoteRotationInterval: number, useDiffEditor: boolean, showInlineDecorations: boolean, showDiffHeaderButtons: boolean, dynamicRendering: boolean, totalFiles: number, totalAdded: number, totalRemoved: number, files: any[] } | null} */
 let currentState = null;
 /** @type {Set<string>} */
 const expandedFiles = new Set();
@@ -121,7 +121,7 @@ function appendIcon(parent) {
 }
 
 /**
- * @param {{ enabled: boolean, ignorePatterns: string[], respectGitignore: boolean, clearOnBranchSwitch: boolean, quoteRotationInterval: number, useDiffEditor: boolean, showInlineDecorations: boolean, showDiffHeaderButtons: boolean, totalFiles: number, totalAdded: number, totalRemoved: number, files: any[] }} state
+ * @param {{ enabled: boolean, ignorePatterns: string[], respectGitignore: boolean, clearOnBranchSwitch: boolean, quoteRotationInterval: number, useDiffEditor: boolean, showInlineDecorations: boolean, showDiffHeaderButtons: boolean, dynamicRendering: boolean, totalFiles: number, totalAdded: number, totalRemoved: number, files: any[] }} state
  */
 function render(state) {
   if (!app) return;
@@ -196,7 +196,7 @@ function renderIdleScreen(quoteRotationInterval) {
 }
 
 /**
- * @param {{ ignorePatterns: string[], respectGitignore: boolean, clearOnBranchSwitch: boolean, quoteRotationInterval: number, useDiffEditor: boolean, showInlineDecorations: boolean, showDiffHeaderButtons: boolean }} state
+ * @param {{ ignorePatterns: string[], respectGitignore: boolean, clearOnBranchSwitch: boolean, quoteRotationInterval: number, useDiffEditor: boolean, showInlineDecorations: boolean, showDiffHeaderButtons: boolean, dynamicRendering: boolean }} state
  */
 function renderSettingsScreen(state) {
   if (!app) return;
@@ -317,6 +317,22 @@ function renderSettingsScreen(state) {
   diffButtonsDescRow.appendChild(el('span', 'settings-check-desc', 'Show Accept All / Discard All buttons in the diff editor title bar'));
   diffButtonsRow.appendChild(diffButtonsDescRow);
   appearanceSection.appendChild(diffButtonsRow);
+
+  // Dynamic rendering performance
+  const dynRenderRow = el('label', 'settings-check-row');
+  dynRenderRow.appendChild(el('span', 'settings-check-label', 'Dynamic rendering performance (experimental)'));
+  const dynRenderDescRow = el('div', 'settings-check-desc-row');
+  const dynRenderCheckbox = /** @type {HTMLInputElement} */ (document.createElement('input'));
+  dynRenderCheckbox.type = 'checkbox';
+  dynRenderCheckbox.className = 'settings-checkbox';
+  dynRenderCheckbox.checked = state.dynamicRendering;
+  dynRenderCheckbox.addEventListener('change', () => {
+    vscode.postMessage({ command: 'setDynamicRendering', value: dynRenderCheckbox.checked });
+  });
+  dynRenderDescRow.appendChild(dynRenderCheckbox);
+  dynRenderDescRow.appendChild(el('span', 'settings-check-desc', 'Render inline controls in the viewport first and stream the rest in as you scroll. Much faster in files with many changes; may cause slight content shifts when scrolling up.'));
+  dynRenderRow.appendChild(dynRenderDescRow);
+  appearanceSection.appendChild(dynRenderRow);
   appearanceSection.appendChild(rotationRow);
 
   // ── Exclude Patterns ──

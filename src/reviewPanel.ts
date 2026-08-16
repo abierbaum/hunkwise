@@ -24,6 +24,7 @@ interface PanelState {
   useDiffEditor: boolean;
   showInlineDecorations: boolean;
   showDiffHeaderButtons: boolean;
+  dynamicRendering: boolean;
   totalFiles: number;
   totalAdded: number;
   totalRemoved: number;
@@ -179,6 +180,7 @@ export class ReviewPanel implements vscode.WebviewViewProvider {
       useDiffEditor: this.stateManager.useDiffEditor,
       showInlineDecorations: this.stateManager.showInlineDecorations,
       showDiffHeaderButtons: this.stateManager.showDiffHeaderButtons,
+      dynamicRendering: this.stateManager.dynamicRendering,
       totalFiles: files.length,
       totalAdded,
       totalRemoved,
@@ -276,6 +278,12 @@ export class ReviewPanel implements vscode.WebviewViewProvider {
       case 'setShowDiffHeaderButtons':
         if (msg.value !== undefined) {
           this.stateManager.setShowDiffHeaderButtons(msg.value as boolean);
+          this.onStateChanged();
+        }
+        break;
+      case 'setDynamicRendering':
+        if (msg.value !== undefined) {
+          this.stateManager.setDynamicRendering(msg.value as boolean);
           this.onStateChanged();
         }
         break;

@@ -29,6 +29,7 @@ export class StateManager {
   private _useDiffEditor: boolean = false;
   private _showInlineDecorations: boolean = true;
   private _showDiffHeaderButtons: boolean = true;
+  private _dynamicRendering: boolean = true;
   private _git: HunkwiseGit | undefined;
 
   // Serial queue: git ops run one at a time; flush() awaits the tail
@@ -57,6 +58,7 @@ export class StateManager {
   get useDiffEditor(): boolean { return this._useDiffEditor; }
   get showInlineDecorations(): boolean { return this._showInlineDecorations; }
   get showDiffHeaderButtons(): boolean { return this._showDiffHeaderButtons; }
+  get dynamicRendering(): boolean { return this._dynamicRendering; }
   get dir(): string | undefined { return this.hunkwiseDir; }
   get git(): HunkwiseGit | undefined { return this._git; }
 
@@ -133,6 +135,7 @@ export class StateManager {
     this._useDiffEditor = settings.useDiffEditor;
     this._showInlineDecorations = settings.showInlineDecorations;
     this._showDiffHeaderButtons = settings.showDiffHeaderButtons;
+    this._dynamicRendering = settings.dynamicRendering;
 
     // Initialize git (idempotent) then restore in-memory state from HEAD
     await g.initGit();
@@ -426,6 +429,7 @@ export class StateManager {
       this._useDiffEditor = merged.useDiffEditor;
       this._showInlineDecorations = merged.showInlineDecorations;
       this._showDiffHeaderButtons = merged.showDiffHeaderButtons;
+      this._dynamicRendering = merged.dynamicRendering;
     } else {
       this.state.clear();
       this._git?.destroyGit();
@@ -479,7 +483,7 @@ export class StateManager {
   }
 
   private currentSettings() {
-    return { ignorePatterns: this._ignorePatterns, respectGitignore: this._respectGitignore, clearOnBranchSwitch: this._clearOnBranchSwitch, quoteRotationInterval: this._quoteRotationInterval, useDiffEditor: this._useDiffEditor, showInlineDecorations: this._showInlineDecorations, showDiffHeaderButtons: this._showDiffHeaderButtons };
+    return { ignorePatterns: this._ignorePatterns, respectGitignore: this._respectGitignore, clearOnBranchSwitch: this._clearOnBranchSwitch, quoteRotationInterval: this._quoteRotationInterval, useDiffEditor: this._useDiffEditor, showInlineDecorations: this._showInlineDecorations, showDiffHeaderButtons: this._showDiffHeaderButtons, dynamicRendering: this._dynamicRendering };
   }
 
   setIgnorePatterns(patterns: string[]): void {
@@ -535,6 +539,14 @@ export class StateManager {
     }
   }
 
+  setDynamicRendering(value: boolean): void {
+    log(`settings: dynamicRendering=${value}`);
+    this._dynamicRendering = value;
+    if (this._enabled && this._git) {
+      this._git.saveSettings({ ...this.currentSettings(), dynamicRendering: value });
+    }
+  }
+
   /**
    * Reload all settings from settings.json (called when settings.json is modified externally).
    * Returns the new ignorePatterns if enabled, null if not enabled or no git.
@@ -549,6 +561,7 @@ export class StateManager {
     this._useDiffEditor = settings.useDiffEditor;
     this._showInlineDecorations = settings.showInlineDecorations;
     this._showDiffHeaderButtons = settings.showDiffHeaderButtons;
+    this._dynamicRendering = settings.dynamicRendering;
     return this._ignorePatterns;
   }
 
@@ -718,6 +731,7 @@ export class StateManager {
     this._useDiffEditor = false;
     this._showInlineDecorations = true;
     this._showDiffHeaderButtons = true;
+    this._dynamicRendering = true;
     this.state.clear();
     this._git = undefined;
     this.gitQueue = Promise.resolve();

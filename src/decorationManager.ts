@@ -340,7 +340,7 @@ export class DecorationManager {
         prev.hunkId = spec.hunkId;
         nextInsets.push(prev);
         reusedCount++;
-      } else if (isVisible(spec.afterLine)) {
+      } else if (!this.stateManager.dynamicRendering || isVisible(spec.afterLine)) {
         const created = this.makeInset(editorKey, editor, spec.afterLine, spec.height, spec.html, key, spec.hunkId);
         if (created) nextInsets.push(created);
         createdCount++;

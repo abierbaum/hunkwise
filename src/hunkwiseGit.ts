@@ -14,6 +14,7 @@ interface Settings {
   useDiffEditor: boolean;
   showInlineDecorations: boolean;
   showDiffHeaderButtons: boolean;
+  dynamicRendering: boolean;
 }
 
 const DEFAULT_SETTINGS: Settings = {
@@ -24,6 +25,7 @@ const DEFAULT_SETTINGS: Settings = {
   useDiffEditor: false,
   showInlineDecorations: true,
   showDiffHeaderButtons: true,
+  dynamicRendering: true,
 };
 
 /**
@@ -104,6 +106,9 @@ export class HunkwiseGit {
         showDiffHeaderButtons: typeof parsed.showDiffHeaderButtons === 'boolean'
           ? parsed.showDiffHeaderButtons
           : DEFAULT_SETTINGS.showDiffHeaderButtons,
+        dynamicRendering: typeof parsed.dynamicRendering === 'boolean'
+          ? parsed.dynamicRendering
+          : DEFAULT_SETTINGS.dynamicRendering,
       };
     } catch {
       return { ...DEFAULT_SETTINGS, ignorePatterns: [...DEFAULT_SETTINGS.ignorePatterns] };
