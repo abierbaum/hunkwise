@@ -42,6 +42,11 @@
         "command": "hunkwise.refresh",
         "title": "hunkwise: Refresh State",
         "icon": "$(refresh)"
+      },
+      {
+        "command": "hunkwise.reviewAllDiffs",
+        "title": "hunkwise: Review All Changes (Multi-Diff)",
+        "icon": "$(diff-multiple)"
       }
     ],
     "menus": {
