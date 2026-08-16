@@ -137,6 +137,8 @@ function insetCacheKey(afterLine: number, height: number): string {
 export class DecorationManager {
   // editorKey → ordered list of insets for that editor
   private insets: Map<string, HunkInset[]> = new Map();
+  // editorKey → queued offscreen inset creations, drained in batches
+  private pendingCreations: Map<string, { timer: ReturnType<typeof setTimeout>; queue: { spec: { afterLine: number; height: number; html: string; hunkId?: string }; key: string }[] }> = new Map();
   private onAction: ((command: 'accept' | 'discard' | 'prev' | 'next', filePath: string, hunkId: string) => void) | undefined;
 
   constructor(
@@ -189,6 +191,7 @@ export class DecorationManager {
     const skipInsets = isInDiff || !this.stateManager.showInlineDecorations;
 
     if (!fileState || fileState.status !== 'reviewing' || skipInsets) {
+      this.cancelPendingCreations(editorKey);
       this.disposeInsetList(this.insets.get(editorKey) ?? []);
       this.insets.delete(editorKey);
       editor.setDecorations(addedLineDecoration, []);
@@ -315,6 +318,13 @@ export class DecorationManager {
       Number(isVisible(specs[b].afterLine)) - Number(isVisible(specs[a].afterLine)) || a - b
     );
 
+    // Creating many webviews at once floods the renderer and stalls the
+    // extension-host RPC channel (blank action bars, slow saves). Visible
+    // insets are created synchronously; offscreen ones are queued and
+    // created in small batches. A newer refresh cancels the pending queue.
+    this.cancelPendingCreations(editorKey);
+    const deferred: { spec: InsetSpec; key: string }[] = [];
+
     for (const idx of order) {
       const spec = specs[idx];
       const key = insetCacheKey(spec.afterLine, spec.height);
@@ -329,11 +339,12 @@ export class DecorationManager {
         prev.hunkId = spec.hunkId;
         nextInsets.push(prev);
         reusedCount++;
-      } else {
-        // Position changed or inset was disposed by VSCode — recreate
+      } else if (isVisible(spec.afterLine)) {
         const created = this.makeInset(editorKey, editor, spec.afterLine, spec.height, spec.html, key, spec.hunkId);
         if (created) nextInsets.push(created);
         createdCount++;
+      } else {
+        deferred.push({ spec, key });
       }
     }
 
@@ -348,7 +359,7 @@ export class DecorationManager {
     }
 
     if (specs.length > 0 || disposedCount > 0) {
-      log(`PERF_MEASURE refresh(${path.basename(filePath)}): hunks=${parsed.length} insets reused=${reusedCount} reloaded=${reloadedCount} created=${createdCount} disposed=${disposedCount} sync=${Date.now() - perfStart}ms`);
+      log(`PERF_MEASURE refresh(${path.basename(filePath)}): hunks=${parsed.length} insets reused=${reusedCount} reloaded=${reloadedCount} created=${createdCount} deferred=${deferred.length} disposed=${disposedCount} sync=${Date.now() - perfStart}ms`);
     }
 
     editor.setDecorations(addedLineDecoration, addedRanges);
@@ -357,6 +368,47 @@ export class DecorationManager {
     } else {
       this.insets.delete(editorKey);
     }
+    if (deferred.length > 0) {
+      this.schedulePendingCreations(editorKey, deferred);
+    }
+  }
+
+  private cancelPendingCreations(editorKey: string): void {
+    const pending = this.pendingCreations.get(editorKey);
+    if (pending) {
+      clearTimeout(pending.timer);
+      this.pendingCreations.delete(editorKey);
+    }
+  }
+
+  private schedulePendingCreations(editorKey: string, queue: { spec: { afterLine: number; height: number; html: string; hunkId?: string }; key: string }[]): void {
+    const BATCH_SIZE = 10;
+    const BATCH_DELAY = 50;
+    const drain = (): void => {
+      const pending = this.pendingCreations.get(editorKey);
+      if (!pending) return;
+      const editor = vscode.window.visibleTextEditors.find(
+        e => e.document.uri.toString() === editorKey
+      );
+      if (!editor) {
+        this.pendingCreations.delete(editorKey);
+        return;
+      }
+      const batch = pending.queue.splice(0, BATCH_SIZE);
+      const list = this.insets.get(editorKey) ?? [];
+      for (const { spec, key } of batch) {
+        const created = this.makeInset(editorKey, editor, spec.afterLine, spec.height, spec.html, key, spec.hunkId);
+        if (created) list.push(created);
+      }
+      this.insets.set(editorKey, list);
+      if (pending.queue.length > 0) {
+        pending.timer = setTimeout(drain, BATCH_DELAY);
+      } else {
+        this.pendingCreations.delete(editorKey);
+        log(`PERF_MEASURE drain(${editorKey.split('/').pop()}): offscreen inset creation complete`);
+      }
+    };
+    this.pendingCreations.set(editorKey, { timer: setTimeout(drain, BATCH_DELAY), queue });
   }
 
   private makeInset(
@@ -406,6 +458,10 @@ export class DecorationManager {
 
   dispose(): void {
     addedLineDecoration.dispose();
+    for (const pending of this.pendingCreations.values()) {
+      clearTimeout(pending.timer);
+    }
+    this.pendingCreations.clear();
     for (const list of this.insets.values()) {
       this.disposeInsetList(list);
     }
