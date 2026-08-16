@@ -23,6 +23,7 @@ interface PanelState {
   quoteRotationInterval: number;
   useDiffEditor: boolean;
   showInlineDecorations: boolean;
+  showDiffHeaderButtons: boolean;
   totalFiles: number;
   totalAdded: number;
   totalRemoved: number;
@@ -177,6 +178,7 @@ export class ReviewPanel implements vscode.WebviewViewProvider {
       quoteRotationInterval: this.stateManager.quoteRotationInterval,
       useDiffEditor: this.stateManager.useDiffEditor,
       showInlineDecorations: this.stateManager.showInlineDecorations,
+      showDiffHeaderButtons: this.stateManager.showDiffHeaderButtons,
       totalFiles: files.length,
       totalAdded,
       totalRemoved,
@@ -268,6 +270,12 @@ export class ReviewPanel implements vscode.WebviewViewProvider {
       case 'setShowInlineDecorations':
         if (msg.value !== undefined) {
           this.stateManager.setShowInlineDecorations(msg.value as boolean);
+          this.onStateChanged();
+        }
+        break;
+      case 'setShowDiffHeaderButtons':
+        if (msg.value !== undefined) {
+          this.stateManager.setShowDiffHeaderButtons(msg.value as boolean);
           this.onStateChanged();
         }
         break;

@@ -3,7 +3,7 @@
 const vscode = /** @type {any} */ (globalThis).acquireVsCodeApi();
 const app = document.getElementById('app');
 
-/** @type {{ enabled: boolean, ignorePatterns: string[], respectGitignore: boolean, clearOnBranchSwitch: boolean, quoteRotationInterval: number, useDiffEditor: boolean, showInlineDecorations: boolean, totalFiles: number, totalAdded: number, totalRemoved: number, files: any[] } | null} */
+/** @type {{ enabled: boolean, ignorePatterns: string[], respectGitignore: boolean, clearOnBranchSwitch: boolean, quoteRotationInterval: number, useDiffEditor: boolean, showInlineDecorations: boolean, showDiffHeaderButtons: boolean, totalFiles: number, totalAdded: number, totalRemoved: number, files: any[] } | null} */
 let currentState = null;
 /** @type {Set<string>} */
 const expandedFiles = new Set();
@@ -121,7 +121,7 @@ function appendIcon(parent) {
 }
 
 /**
- * @param {{ enabled: boolean, ignorePatterns: string[], respectGitignore: boolean, clearOnBranchSwitch: boolean, quoteRotationInterval: number, useDiffEditor: boolean, showInlineDecorations: boolean, totalFiles: number, totalAdded: number, totalRemoved: number, files: any[] }} state
+ * @param {{ enabled: boolean, ignorePatterns: string[], respectGitignore: boolean, clearOnBranchSwitch: boolean, quoteRotationInterval: number, useDiffEditor: boolean, showInlineDecorations: boolean, showDiffHeaderButtons: boolean, totalFiles: number, totalAdded: number, totalRemoved: number, files: any[] }} state
  */
 function render(state) {
   if (!app) return;
@@ -196,7 +196,7 @@ function renderIdleScreen(quoteRotationInterval) {
 }
 
 /**
- * @param {{ ignorePatterns: string[], respectGitignore: boolean, clearOnBranchSwitch: boolean, quoteRotationInterval: number, useDiffEditor: boolean, showInlineDecorations: boolean }} state
+ * @param {{ ignorePatterns: string[], respectGitignore: boolean, clearOnBranchSwitch: boolean, quoteRotationInterval: number, useDiffEditor: boolean, showInlineDecorations: boolean, showDiffHeaderButtons: boolean }} state
  */
 function renderSettingsScreen(state) {
   if (!app) return;
@@ -301,6 +301,22 @@ function renderSettingsScreen(state) {
   diffEditorDescRow.appendChild(el('span', 'settings-check-desc', 'Clicking files or hunks in the panel opens a diff view (baseline vs current) instead of the inline editor'));
   diffEditorRow.appendChild(diffEditorDescRow);
   appearanceSection.appendChild(diffEditorRow);
+
+  // Show diff header buttons
+  const diffButtonsRow = el('label', 'settings-check-row');
+  diffButtonsRow.appendChild(el('span', 'settings-check-label', 'Show diff header buttons'));
+  const diffButtonsDescRow = el('div', 'settings-check-desc-row');
+  const diffButtonsCheckbox = /** @type {HTMLInputElement} */ (document.createElement('input'));
+  diffButtonsCheckbox.type = 'checkbox';
+  diffButtonsCheckbox.className = 'settings-checkbox';
+  diffButtonsCheckbox.checked = state.showDiffHeaderButtons;
+  diffButtonsCheckbox.addEventListener('change', () => {
+    vscode.postMessage({ command: 'setShowDiffHeaderButtons', value: diffButtonsCheckbox.checked });
+  });
+  diffButtonsDescRow.appendChild(diffButtonsCheckbox);
+  diffButtonsDescRow.appendChild(el('span', 'settings-check-desc', 'Show Accept All / Discard All buttons in the diff editor title bar'));
+  diffButtonsRow.appendChild(diffButtonsDescRow);
+  appearanceSection.appendChild(diffButtonsRow);
   appearanceSection.appendChild(rotationRow);
 
   // ── Exclude Patterns ──

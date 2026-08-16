@@ -33,12 +33,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<{ getR
   let decorationManager: DecorationManager | undefined;
   let reviewPanel: ReviewPanel | undefined;
   let diffCodeLensProvider: DiffCodeLensProvider | undefined;
+  let updateDiffContext: (() => void) | undefined;
 
   // Original state-changed callback — no diff-editor side effects
   function onStateChanged(): void {
     decorationManager?.refresh();
     reviewPanel?.refresh();
     diffCodeLensProvider?.fire();
+    updateDiffContext?.();
   }
 
   /** Notify the diff editor that a specific file's baseline changed (only after accept). */
@@ -172,14 +174,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<{ getR
     return [...files].reverse().find(f => f.localeCompare(fp) < 0) ?? files[files.length - 1];
   }
 
-  const updateDiffContext = (): void => {
-    void vscode.commands.executeCommand('setContext', 'hunkwise.activeDiff', activeHunkwiseDiffPath() !== undefined);
+  updateDiffContext = (): void => {
+    const show = stateManager.showDiffHeaderButtons && activeHunkwiseDiffPath() !== undefined;
+    void vscode.commands.executeCommand('setContext', 'hunkwise.activeDiff', show);
   };
   updateDiffContext();
 
   context.subscriptions.push(
-    vscode.window.tabGroups.onDidChangeTabs(updateDiffContext),
-    vscode.window.onDidChangeActiveTextEditor(updateDiffContext),
+    vscode.window.tabGroups.onDidChangeTabs(() => updateDiffContext?.()),
+    vscode.window.onDidChangeActiveTextEditor(() => updateDiffContext?.()),
     vscode.commands.registerCommand('hunkwise.diffAcceptFile', async () => {
       const fp = activeHunkwiseDiffPath();
       if (!fp) return;

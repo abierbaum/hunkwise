@@ -28,6 +28,7 @@ export class StateManager {
   private _quoteRotationInterval: number = 30;
   private _useDiffEditor: boolean = false;
   private _showInlineDecorations: boolean = true;
+  private _showDiffHeaderButtons: boolean = true;
   private _git: HunkwiseGit | undefined;
 
   // Serial queue: git ops run one at a time; flush() awaits the tail
@@ -55,6 +56,7 @@ export class StateManager {
   get quoteRotationInterval(): number { return this._quoteRotationInterval; }
   get useDiffEditor(): boolean { return this._useDiffEditor; }
   get showInlineDecorations(): boolean { return this._showInlineDecorations; }
+  get showDiffHeaderButtons(): boolean { return this._showDiffHeaderButtons; }
   get dir(): string | undefined { return this.hunkwiseDir; }
   get git(): HunkwiseGit | undefined { return this._git; }
 
@@ -130,6 +132,7 @@ export class StateManager {
     this._quoteRotationInterval = settings.quoteRotationInterval;
     this._useDiffEditor = settings.useDiffEditor;
     this._showInlineDecorations = settings.showInlineDecorations;
+    this._showDiffHeaderButtons = settings.showDiffHeaderButtons;
 
     // Initialize git (idempotent) then restore in-memory state from HEAD
     await g.initGit();
@@ -422,6 +425,7 @@ export class StateManager {
       this._quoteRotationInterval = merged.quoteRotationInterval;
       this._useDiffEditor = merged.useDiffEditor;
       this._showInlineDecorations = merged.showInlineDecorations;
+      this._showDiffHeaderButtons = merged.showDiffHeaderButtons;
     } else {
       this.state.clear();
       this._git?.destroyGit();
@@ -475,7 +479,7 @@ export class StateManager {
   }
 
   private currentSettings() {
-    return { ignorePatterns: this._ignorePatterns, respectGitignore: this._respectGitignore, clearOnBranchSwitch: this._clearOnBranchSwitch, quoteRotationInterval: this._quoteRotationInterval, useDiffEditor: this._useDiffEditor, showInlineDecorations: this._showInlineDecorations };
+    return { ignorePatterns: this._ignorePatterns, respectGitignore: this._respectGitignore, clearOnBranchSwitch: this._clearOnBranchSwitch, quoteRotationInterval: this._quoteRotationInterval, useDiffEditor: this._useDiffEditor, showInlineDecorations: this._showInlineDecorations, showDiffHeaderButtons: this._showDiffHeaderButtons };
   }
 
   setIgnorePatterns(patterns: string[]): void {
@@ -523,6 +527,14 @@ export class StateManager {
     }
   }
 
+  setShowDiffHeaderButtons(value: boolean): void {
+    log(`settings: showDiffHeaderButtons=${value}`);
+    this._showDiffHeaderButtons = value;
+    if (this._enabled && this._git) {
+      this._git.saveSettings({ ...this.currentSettings(), showDiffHeaderButtons: value });
+    }
+  }
+
   /**
    * Reload all settings from settings.json (called when settings.json is modified externally).
    * Returns the new ignorePatterns if enabled, null if not enabled or no git.
@@ -536,6 +548,7 @@ export class StateManager {
     this._quoteRotationInterval = settings.quoteRotationInterval;
     this._useDiffEditor = settings.useDiffEditor;
     this._showInlineDecorations = settings.showInlineDecorations;
+    this._showDiffHeaderButtons = settings.showDiffHeaderButtons;
     return this._ignorePatterns;
   }
 
@@ -704,6 +717,7 @@ export class StateManager {
     this._ignorePatterns = [...DEFAULT_IGNORE_PATTERNS];
     this._useDiffEditor = false;
     this._showInlineDecorations = true;
+    this._showDiffHeaderButtons = true;
     this.state.clear();
     this._git = undefined;
     this.gitQueue = Promise.resolve();

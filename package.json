@@ -51,12 +51,18 @@
       {
         "command": "hunkwise.diffAcceptFile",
         "title": "hunkwise: Accept All Changes in File",
-        "icon": "$(check-all)"
+        "icon": {
+          "light": "media/accept-check.svg",
+          "dark": "media/accept-check.svg"
+        }
       },
       {
         "command": "hunkwise.diffDiscardFile",
         "title": "hunkwise: Discard All Changes in File",
-        "icon": "$(discard)"
+        "icon": {
+          "light": "media/discard-x.svg",
+          "dark": "media/discard-x.svg"
+        }
       },
       {
         "command": "hunkwise.diffPrevFile",
@@ -72,24 +78,14 @@
     "menus": {
       "editor/title": [
         {
-          "command": "hunkwise.diffPrevFile",
+          "command": "hunkwise.diffAcceptFile",
           "when": "hunkwise.activeDiff",
           "group": "navigation@1"
         },
         {
-          "command": "hunkwise.diffNextFile",
-          "when": "hunkwise.activeDiff",
-          "group": "navigation@2"
-        },
-        {
-          "command": "hunkwise.diffAcceptFile",
-          "when": "hunkwise.activeDiff",
-          "group": "navigation@3"
-        },
-        {
           "command": "hunkwise.diffDiscardFile",
           "when": "hunkwise.activeDiff",
-          "group": "navigation@4"
+          "group": "navigation@2"
         }
       ],
       "view/title": [

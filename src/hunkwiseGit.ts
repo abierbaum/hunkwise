@@ -13,6 +13,7 @@ interface Settings {
   quoteRotationInterval: number;
   useDiffEditor: boolean;
   showInlineDecorations: boolean;
+  showDiffHeaderButtons: boolean;
 }
 
 const DEFAULT_SETTINGS: Settings = {
@@ -22,6 +23,7 @@ const DEFAULT_SETTINGS: Settings = {
   quoteRotationInterval: 30,
   useDiffEditor: false,
   showInlineDecorations: true,
+  showDiffHeaderButtons: true,
 };
 
 /**
@@ -99,6 +101,9 @@ export class HunkwiseGit {
         showInlineDecorations: typeof parsed.showInlineDecorations === 'boolean'
           ? parsed.showInlineDecorations
           : DEFAULT_SETTINGS.showInlineDecorations,
+        showDiffHeaderButtons: typeof parsed.showDiffHeaderButtons === 'boolean'
+          ? parsed.showDiffHeaderButtons
+          : DEFAULT_SETTINGS.showDiffHeaderButtons,
       };
     } catch {
       return { ...DEFAULT_SETTINGS, ignorePatterns: [...DEFAULT_SETTINGS.ignorePatterns] };
