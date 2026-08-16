@@ -121,6 +121,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<{ getR
       if (editor) decorationManager?.refresh([editor]);
       diffCodeLensProvider?.fire();
     }),
+    vscode.window.onDidChangeTextEditorVisibleRanges(e => {
+      if (e.textEditor.document.uri.scheme !== 'file') return;
+      decorationManager?.promoteVisible(e.textEditor);
+    }),
     vscode.workspace.onDidChangeTextDocument(e => {
       if (e.document.uri.scheme !== 'file') return;
       // Skip refreshes while hunkwise itself is editing the file (discard):

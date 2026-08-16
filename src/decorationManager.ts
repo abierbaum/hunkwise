@@ -373,6 +373,39 @@ export class DecorationManager {
     }
   }
 
+  /**
+   * Immediately create any queued insets that entered the viewport (+margin).
+   * Called on visible-range changes so scrolling or jump-to-symbol never
+   * waits on the background drain.
+   */
+  promoteVisible(editor: vscode.TextEditor): void {
+    const editorKey = editor.document.uri.toString();
+    const pending = this.pendingCreations.get(editorKey);
+    if (!pending || pending.queue.length === 0) return;
+
+    const MARGIN = 30;
+    const ranges = editor.visibleRanges;
+    const isVisible = (line: number) => ranges.some(
+      r => line >= r.start.line - MARGIN && line <= r.end.line + MARGIN
+    );
+    const promote = pending.queue.filter(item => isVisible(item.spec.afterLine));
+    if (promote.length === 0) return;
+    pending.queue = pending.queue.filter(item => !isVisible(item.spec.afterLine));
+
+    const list = this.insets.get(editorKey) ?? [];
+    for (const { spec, key } of promote) {
+      const created = this.makeInset(editorKey, editor, spec.afterLine, spec.height, spec.html, key, spec.hunkId);
+      if (created) list.push(created);
+    }
+    this.insets.set(editorKey, list);
+    log(`PERF_MEASURE promote(${editorKey.split('/').pop()}): ${promote.length} inset(s) promoted, ${pending.queue.length} still queued`);
+
+    if (pending.queue.length === 0) {
+      clearTimeout(pending.timer);
+      this.pendingCreations.delete(editorKey);
+    }
+  }
+
   private cancelPendingCreations(editorKey: string): void {
     const pending = this.pendingCreations.get(editorKey);
     if (pending) {
@@ -384,6 +417,12 @@ export class DecorationManager {
   private schedulePendingCreations(editorKey: string, queue: { spec: { afterLine: number; height: number; html: string; hunkId?: string }; key: string }[]): void {
     const BATCH_SIZE = 10;
     const BATCH_DELAY = 50;
+    // Hold offscreen creations so visible insets have the renderer to
+    // themselves — webview paint latency scales with in-flight creations
+    // (measured: first button 280ms when the renderer gets only the viewport
+    // batch vs ~2s when everything is queued at once). Scrolling into queued
+    // regions promotes those insets immediately via promoteVisible().
+    const INITIAL_DELAY = 1500;
     const drain = (): void => {
       const pending = this.pendingCreations.get(editorKey);
       if (!pending) return;
@@ -408,7 +447,7 @@ export class DecorationManager {
         log(`PERF_MEASURE drain(${editorKey.split('/').pop()}): offscreen inset creation complete`);
       }
     };
-    this.pendingCreations.set(editorKey, { timer: setTimeout(drain, BATCH_DELAY), queue });
+    this.pendingCreations.set(editorKey, { timer: setTimeout(drain, INITIAL_DELAY), queue });
   }
 
   private makeInset(
