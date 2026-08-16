@@ -149,11 +149,34 @@ export class DecorationManager {
     this.onAction = onAction;
   }
 
+  // Insets are per-editor, so the same document split across editors gets an
+  // independent inset set per view column.
+  private editorKeyFor(editor: vscode.TextEditor): string {
+    return `${editor.document.uri.toString()}#${editor.viewColumn ?? 'x'}`;
+  }
+
+  private findEditor(editorKey: string): vscode.TextEditor | undefined {
+    return vscode.window.visibleTextEditors.find(e => this.editorKeyFor(e) === editorKey);
+  }
+
   refresh(editors?: readonly vscode.TextEditor[]): void {
     const targets = editors ?? vscode.window.visibleTextEditors;
     const diffPaths = this.diffEditorFilePaths();
     for (const editor of targets) {
       this.applyToEditor(editor, diffPaths);
+    }
+    if (!editors) {
+      // Full refresh — prune state for editors that are no longer visible
+      const validKeys = new Set(vscode.window.visibleTextEditors.map(e => this.editorKeyFor(e)));
+      for (const key of [...this.insets.keys()]) {
+        if (!validKeys.has(key)) {
+          this.disposeInsetList(this.insets.get(key) ?? []);
+          this.insets.delete(key);
+        }
+      }
+      for (const key of [...this.pendingCreations.keys()]) {
+        if (!validKeys.has(key)) this.cancelPendingCreations(key);
+      }
     }
   }
 
@@ -184,7 +207,7 @@ export class DecorationManager {
 
   private applyToEditor(editor: vscode.TextEditor, diffPaths: Set<string>): void {
     const filePath = editor.document.uri.fsPath;
-    const editorKey = editor.document.uri.toString();
+    const editorKey = this.editorKeyFor(editor);
     const fileState = this.stateManager.getFile(filePath);
 
     // Skip insets: in diff editors (viewColumn undefined), or when user disabled inline decorations
@@ -380,7 +403,7 @@ export class DecorationManager {
    * waits on the background drain.
    */
   promoteVisible(editor: vscode.TextEditor): void {
-    const editorKey = editor.document.uri.toString();
+    const editorKey = this.editorKeyFor(editor);
     const pending = this.pendingCreations.get(editorKey);
     if (!pending || pending.queue.length === 0) return;
 
@@ -429,9 +452,7 @@ export class DecorationManager {
       const pending = this.pendingCreations.get(editorKey);
       if (!pending) return;
       pending.timer = undefined;
-      const editor = vscode.window.visibleTextEditors.find(
-        e => e.document.uri.toString() === editorKey
-      );
+      const editor = this.findEditor(editorKey);
       if (!editor) {
         this.pendingCreations.delete(editorKey);
         return;
@@ -501,9 +522,7 @@ export class DecorationManager {
         disposeListener: inset.onDidDispose(() => {
           entry.disposed = true;
           // Re-apply if editor is still visible so insets are immediately rebuilt
-          const targetEditor = vscode.window.visibleTextEditors.find(
-            e => e.document.uri.toString() === editorKey
-          );
+          const targetEditor = this.findEditor(editorKey);
           if (targetEditor) this.applyToEditor(targetEditor, this.diffEditorFilePaths());
         }),
       };

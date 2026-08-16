@@ -113,8 +113,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<{ getR
   });
 
   context.subscriptions.push(
-    vscode.window.onDidChangeVisibleTextEditors(editors => {
-      decorationManager?.refresh(editors);
+    vscode.window.onDidChangeVisibleTextEditors(() => {
+      // Full refresh so per-editor inset state for closed editors is pruned
+      decorationManager?.refresh();
       diffCodeLensProvider?.fire();
     }),
     vscode.window.onDidChangeActiveTextEditor(editor => {
@@ -131,10 +132,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<{ getR
       // the document is in an intermediate state and the operation's callback
       // refreshes once when it completes.
       if (fileWatcher.isSelfEdit(e.document.uri.fsPath)) return;
-      const editor = vscode.window.visibleTextEditors.find(
+      const editors = vscode.window.visibleTextEditors.filter(
         ed => ed.document.uri.fsPath === e.document.uri.fsPath
       );
-      if (editor) decorationManager?.refresh([editor]);
+      if (editors.length > 0) decorationManager?.refresh(editors);
       reviewPanel?.refresh();
     }),
   );
