@@ -123,6 +123,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<{ getR
     }),
     vscode.workspace.onDidChangeTextDocument(e => {
       if (e.document.uri.scheme !== 'file') return;
+      // Skip refreshes while hunkwise itself is editing the file (discard):
+      // the document is in an intermediate state and the operation's callback
+      // refreshes once when it completes.
+      if (fileWatcher.isSelfEdit(e.document.uri.fsPath)) return;
       const editor = vscode.window.visibleTextEditors.find(
         ed => ed.document.uri.fsPath === e.document.uri.fsPath
       );
