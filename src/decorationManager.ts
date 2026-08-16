@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import * as path from 'path';
 import { StateManager } from './stateManager';
 import { computeHunks, hunkId } from './diffEngine';
 import { log } from './log';
@@ -39,7 +40,9 @@ body {
 }
 
 // ── Action-bar inset ──────────────────────────────────────────────────────────
-function buildActionsHtml(filePath: string, hunkId: string): string {
+// Static html — no per-hunk data. The target hunk is resolved from the inset
+// entry at message time, so reused insets never reload their iframe.
+function buildActionsHtml(): string {
   return `<!DOCTYPE html><html><head>
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline';">
 <style>
@@ -103,10 +106,11 @@ button:hover { background: var(--vscode-button-secondaryHoverBackground, #45494e
 </div>
 <script>
 const vscode = acquireVsCodeApi();
-function accept() { vscode.postMessage({ command: 'accept', filePath: ${JSON.stringify(filePath)}, hunkId: ${JSON.stringify(hunkId)} }); }
-function discard() { vscode.postMessage({ command: 'discard', filePath: ${JSON.stringify(filePath)}, hunkId: ${JSON.stringify(hunkId)} }); }
-function prev() { vscode.postMessage({ command: 'prev', filePath: ${JSON.stringify(filePath)}, hunkId: ${JSON.stringify(hunkId)} }); }
-function next() { vscode.postMessage({ command: 'next', filePath: ${JSON.stringify(filePath)}, hunkId: ${JSON.stringify(hunkId)} }); }
+vscode.postMessage({ command: 'ready' });
+function accept() { vscode.postMessage({ command: 'accept' }); }
+function discard() { vscode.postMessage({ command: 'discard' }); }
+function prev() { vscode.postMessage({ command: 'prev' }); }
+function next() { vscode.postMessage({ command: 'next' }); }
 </script>
 </body></html>`;
 }
@@ -117,6 +121,12 @@ interface HunkInset {
   disposeListener: vscode.Disposable;
   // Cache key: used to detect whether this inset can be reused
   cacheKey: string;
+  // Last html assigned — reassigning webview.html reloads the iframe, so
+  // assignment is skipped when unchanged.
+  html: string;
+  // Current target hunk; updated each refresh, read on webview messages.
+  // Undefined for deleted-lines insets.
+  hunkId?: string;
   disposed: boolean;
 }
 
@@ -194,6 +204,7 @@ export class DecorationManager {
       afterLine: number;
       height: number;
       html: string;
+      hunkId?: string;
     }
     const specs: InsetSpec[] = [];
 
@@ -263,37 +274,81 @@ export class DecorationManager {
       specs.push({
         afterLine: actionAfterLine,
         height: 2,
-        html: buildActionsHtml(filePath, id),
+        html: buildActionsHtml(),
+        hunkId: id,
       });
     }
 
-    // Reuse existing insets when cache keys match to avoid flicker
+    // Reuse existing insets when cache keys match to avoid flicker.
+    // Matched by position key, not array index, so removing one hunk doesn't
+    // invalidate every inset after it.
     const existing = this.insets.get(editorKey) ?? [];
     const nextInsets: HunkInset[] = [];
+    const perfStart = Date.now();
+    let reusedCount = 0;
+    let reloadedCount = 0;
+    let createdCount = 0;
+    let disposedCount = 0;
 
-    for (let i = 0; i < specs.length; i++) {
-      const spec = specs[i];
+    // Pool existing insets by cache key. Order within a key is preserved:
+    // insets sharing an afterLine stack first-created-on-top.
+    const pool = new Map<string, HunkInset[]>();
+    for (const prev of existing) {
+      if (prev.disposed) {
+        prev.disposeListener.dispose();
+        prev.disposable.dispose();
+        continue;
+      }
+      const list = pool.get(prev.cacheKey);
+      if (list) { list.push(prev); } else { pool.set(prev.cacheKey, [prev]); }
+    }
+
+    // Create viewport-visible insets first so their webviews render before
+    // offscreen ones. Stable order within equal visibility preserves the
+    // same-afterLine stacking order.
+    const VISIBLE_MARGIN = 30;
+    const visibleRanges = editor.visibleRanges;
+    const isVisible = (line: number) => visibleRanges.some(
+      r => line >= r.start.line - VISIBLE_MARGIN && line <= r.end.line + VISIBLE_MARGIN
+    );
+    const order = specs.map((_, i) => i).sort((a, b) =>
+      Number(isVisible(specs[b].afterLine)) - Number(isVisible(specs[a].afterLine)) || a - b
+    );
+
+    for (const idx of order) {
+      const spec = specs[idx];
       const key = insetCacheKey(spec.afterLine, spec.height);
-      const prev = existing[i];
-      if (prev && prev.cacheKey === key && !prev.disposed) {
-        // Same position/height and still alive — reuse, just update html
-        prev.inset.webview.html = spec.html;
+      const prev = pool.get(key)?.shift();
+      if (prev) {
+        // Reuse; reassign html only when changed (assignment reloads the iframe)
+        if (prev.html !== spec.html) {
+          prev.inset.webview.html = spec.html;
+          prev.html = spec.html;
+          reloadedCount++;
+        }
+        prev.hunkId = spec.hunkId;
         nextInsets.push(prev);
-        existing[i] = undefined as any; // mark as consumed
+        reusedCount++;
       } else {
         // Position changed or inset was disposed by VSCode — recreate
-        const created = this.makeInset(editorKey, editor, spec.afterLine, spec.height, spec.html, key);
+        const created = this.makeInset(editorKey, editor, spec.afterLine, spec.height, spec.html, key, spec.hunkId);
         if (created) nextInsets.push(created);
+        createdCount++;
       }
     }
 
     // Dispose leftover insets not reused
-    for (const leftover of existing) {
-      if (leftover) {
+    for (const list of pool.values()) {
+      for (const leftover of list) {
         leftover.disposeListener.dispose();
         leftover.disposable.dispose();
         if (!leftover.disposed) leftover.inset.dispose();
+        disposedCount++;
       }
+    }
+
+    if (specs.length > 0 || disposedCount > 0) {
+      log(`PERF_MEASURE refresh(${path.basename(filePath)}): hunks=${parsed.length} insets reused=${reusedCount} reloaded=${reloadedCount} created=${createdCount} disposed=${disposedCount} sync=${Date.now() - perfStart}ms`);
     }
 
     editor.setDecorations(addedLineDecoration, addedRanges);
@@ -311,19 +366,28 @@ export class DecorationManager {
     height: number,
     html: string,
     cacheKey: string,
+    hunkId?: string,
   ): HunkInset | undefined {
     try {
       const inset = (vscode.window as any).createWebviewTextEditorInset(
         editor, afterLine, height, { enableScripts: true }
       ) as vscode.WebviewEditorInset;
       inset.webview.html = html;
+      const filePath = editor.document.uri.fsPath;
       const disposable = inset.webview.onDidReceiveMessage((msg: any) => {
+        if (msg.command === 'ready') {
+          // Sent on every webview load/reload
+          log(`PERF_MEASURE ready(${entry.hunkId}): action bar rendered`);
+          return;
+        }
         if (msg.command === 'accept' || msg.command === 'discard' || msg.command === 'prev' || msg.command === 'next') {
-          this.onAction?.(msg.command, msg.filePath, msg.hunkId);
+          if (entry.hunkId !== undefined) {
+            this.onAction?.(msg.command, filePath, entry.hunkId);
+          }
         }
       });
       const entry: HunkInset = {
-        inset, disposable, cacheKey, disposed: false,
+        inset, disposable, cacheKey, html, hunkId, disposed: false,
         disposeListener: inset.onDidDispose(() => {
           entry.disposed = true;
           // Re-apply if editor is still visible so insets are immediately rebuilt
