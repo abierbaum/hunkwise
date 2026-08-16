@@ -80,12 +80,12 @@
         {
           "command": "hunkwise.diffAcceptFile",
           "when": "hunkwise.activeDiff",
-          "group": "navigation@1"
+          "group": "navigation@6"
         },
         {
           "command": "hunkwise.diffDiscardFile",
           "when": "hunkwise.activeDiff",
-          "group": "navigation@2"
+          "group": "navigation@6"
         }
       ],
       "view/title": [
