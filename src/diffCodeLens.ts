@@ -69,12 +69,21 @@ export class DiffCodeLensProvider implements vscode.CodeLensProvider {
 
   private isActiveHunkwiseDiffTab(uri: vscode.Uri): boolean {
     const fsPath = uri.fsPath;
+    // Guarded lookup: TabInputTextMultiDiff requires VSCode >= 1.86
+    const MultiDiffInput = (vscode as any).TabInputTextMultiDiff;
     for (const group of vscode.window.tabGroups.all) {
       const active = group.activeTab;
       if (active?.input instanceof vscode.TabInputTextDiff) {
         if (active.input.original.scheme === 'hunkwise-baseline'
           && active.input.modified.fsPath === fsPath) {
           return true;
+        }
+      }
+      if (MultiDiffInput && active?.input instanceof MultiDiffInput) {
+        for (const d of (active.input as any).textDiffs ?? []) {
+          if (d?.original?.scheme === 'hunkwise-baseline' && d?.modified?.fsPath === fsPath) {
+            return true;
+          }
         }
       }
     }

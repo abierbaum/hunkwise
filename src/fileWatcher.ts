@@ -211,6 +211,10 @@ export class FileWatcher {
     this.selfEditFiles.delete(normalizePath(filePath));
   }
 
+  isSelfEdit(filePath: string): boolean {
+    return this.selfEditFiles.has(normalizePath(filePath));
+  }
+
   shouldIgnore(filePath: string, isDirectory?: boolean): boolean {
     if (!filePath) return false;
 

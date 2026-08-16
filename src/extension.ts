@@ -5,7 +5,7 @@ import { StateManager } from './stateManager';
 import { FileWatcher } from './fileWatcher';
 import { DecorationManager } from './decorationManager';
 import { ReviewPanel } from './reviewPanel';
-import { registerCommands, acceptHunk, discardHunk } from './commands';
+import { registerCommands, acceptHunk, discardHunk, acceptFileByPath, discardFileByPath } from './commands';
 import { DiffCodeLensProvider } from './diffCodeLens';
 import { initLog, log } from './log';
 
@@ -33,12 +33,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<{ getR
   let decorationManager: DecorationManager | undefined;
   let reviewPanel: ReviewPanel | undefined;
   let diffCodeLensProvider: DiffCodeLensProvider | undefined;
+  let updateDiffContext: (() => void) | undefined;
 
   // Original state-changed callback — no diff-editor side effects
   function onStateChanged(): void {
     decorationManager?.refresh();
     reviewPanel?.refresh();
     diffCodeLensProvider?.fire();
+    updateDiffContext?.();
   }
 
   /** Notify the diff editor that a specific file's baseline changed (only after accept). */
@@ -111,20 +113,33 @@ export async function activate(context: vscode.ExtensionContext): Promise<{ getR
   });
 
   context.subscriptions.push(
-    vscode.window.onDidChangeVisibleTextEditors(editors => {
-      decorationManager?.refresh(editors);
+    vscode.window.onDidChangeVisibleTextEditors(() => {
+      // Full refresh so per-editor inset state for closed editors is pruned
+      decorationManager?.refresh();
       diffCodeLensProvider?.fire();
     }),
     vscode.window.onDidChangeActiveTextEditor(editor => {
       if (editor) decorationManager?.refresh([editor]);
       diffCodeLensProvider?.fire();
     }),
+    vscode.window.onDidChangeTextEditorVisibleRanges(e => {
+      if (e.textEditor.document.uri.scheme !== 'file') return;
+      decorationManager?.promoteVisible(e.textEditor);
+    }),
+    vscode.workspace.onDidChangeConfiguration(e => {
+      // The panel warns when diffEditor.codeLens is off — keep it current
+      if (e.affectsConfiguration('diffEditor.codeLens')) reviewPanel?.refresh();
+    }),
     vscode.workspace.onDidChangeTextDocument(e => {
       if (e.document.uri.scheme !== 'file') return;
-      const editor = vscode.window.visibleTextEditors.find(
+      // Skip refreshes while hunkwise itself is editing the file (discard):
+      // the document is in an intermediate state and the operation's callback
+      // refreshes once when it completes.
+      if (fileWatcher.isSelfEdit(e.document.uri.fsPath)) return;
+      const editors = vscode.window.visibleTextEditors.filter(
         ed => ed.document.uri.fsPath === e.document.uri.fsPath
       );
-      if (editor) decorationManager?.refresh([editor]);
+      if (editors.length > 0) decorationManager?.refresh(editors);
       reviewPanel?.refresh();
     }),
   );
@@ -135,6 +150,85 @@ export async function activate(context: vscode.ExtensionContext): Promise<{ getR
   );
 
   registerCommands(context, stateManager, fileWatcher, reviewPanel, onStateChanged);
+
+  // ── Diff editor title-bar actions (option-3 prototype) ────────────────────
+  // `hunkwise.activeDiff` context key gates the editor/title buttons in
+  // package.json to hunkwise diff tabs only.
+
+  function activeHunkwiseDiffPath(): string | undefined {
+    const tab = vscode.window.tabGroups.activeTabGroup.activeTab;
+    if (tab?.input instanceof vscode.TabInputTextDiff
+      && tab.input.original.scheme === 'hunkwise-baseline'
+      && tab.input.modified.scheme === 'file') {
+      return tab.input.modified.fsPath;
+    }
+    return undefined;
+  }
+
+  function reviewingFilesSorted(): string[] {
+    return [...stateManager.getAllFiles()]
+      .filter(([, s]) => s.status === 'reviewing')
+      .map(([fp]) => fp)
+      .sort((a, b) => a.localeCompare(b));
+  }
+
+  async function openHunkwiseDiff(fp: string): Promise<void> {
+    const uri = vscode.Uri.file(fp);
+    await vscode.commands.executeCommand(
+      'vscode.diff', uri.with({ scheme: 'hunkwise-baseline' }), uri, `${path.basename(fp)} (hunkwise)`
+    );
+  }
+
+  /** Next reviewing file after fp in sorted order, wrapping; excludes fp itself. */
+  function nextReviewingFile(fp: string, direction: 1 | -1): string | undefined {
+    const files = reviewingFilesSorted().filter(f => f !== fp);
+    if (files.length === 0) return undefined;
+    if (direction === 1) return files.find(f => f.localeCompare(fp) > 0) ?? files[0];
+    return [...files].reverse().find(f => f.localeCompare(fp) < 0) ?? files[files.length - 1];
+  }
+
+  updateDiffContext = (): void => {
+    const show = stateManager.showDiffHeaderButtons && activeHunkwiseDiffPath() !== undefined;
+    void vscode.commands.executeCommand('setContext', 'hunkwise.activeDiff', show);
+  };
+  updateDiffContext();
+
+  context.subscriptions.push(
+    vscode.window.tabGroups.onDidChangeTabs(() => updateDiffContext?.()),
+    vscode.window.onDidChangeActiveTextEditor(() => updateDiffContext?.()),
+    vscode.commands.registerCommand('hunkwise.diffAcceptFile', async () => {
+      const fp = activeHunkwiseDiffPath();
+      if (!fp) return;
+      const next = nextReviewingFile(fp, 1);
+      acceptFileByPath(stateManager, fp, () => {
+        onStateChanged();
+        void closeStaleTabs().catch(err => log(`closeStaleTabs: ${err}`));
+      });
+      if (next) await openHunkwiseDiff(next);
+    }),
+    vscode.commands.registerCommand('hunkwise.diffDiscardFile', async () => {
+      const fp = activeHunkwiseDiffPath();
+      if (!fp) return;
+      const next = nextReviewingFile(fp, 1);
+      await discardFileByPath(stateManager, fileWatcher, fp, () => {
+        onStateChanged();
+        void closeStaleTabs().catch(err => log(`closeStaleTabs: ${err}`));
+      });
+      if (next) await openHunkwiseDiff(next);
+    }),
+    vscode.commands.registerCommand('hunkwise.diffNextFile', async () => {
+      const fp = activeHunkwiseDiffPath();
+      if (!fp) return;
+      const next = nextReviewingFile(fp, 1);
+      if (next) await openHunkwiseDiff(next);
+    }),
+    vscode.commands.registerCommand('hunkwise.diffPrevFile', async () => {
+      const fp = activeHunkwiseDiffPath();
+      if (!fp) return;
+      const prev = nextReviewingFile(fp, -1);
+      if (prev) await openHunkwiseDiff(prev);
+    }),
+  );
 
   // ── Diff CodeLens ─────────────────────────────────────────────────────────
   diffCodeLensProvider = new DiffCodeLensProvider(stateManager);

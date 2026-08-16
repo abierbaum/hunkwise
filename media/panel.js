@@ -3,7 +3,7 @@
 const vscode = /** @type {any} */ (globalThis).acquireVsCodeApi();
 const app = document.getElementById('app');
 
-/** @type {{ enabled: boolean, ignorePatterns: string[], respectGitignore: boolean, clearOnBranchSwitch: boolean, quoteRotationInterval: number, useDiffEditor: boolean, showInlineDecorations: boolean, totalFiles: number, totalAdded: number, totalRemoved: number, files: any[] } | null} */
+/** @type {{ enabled: boolean, ignorePatterns: string[], respectGitignore: boolean, clearOnBranchSwitch: boolean, quoteRotationInterval: number, useDiffEditor: boolean, showInlineDecorations: boolean, showDiffHeaderButtons: boolean, dynamicRendering: boolean, showPerfTrace: boolean, diffCodeLensEnabled: boolean, totalFiles: number, totalAdded: number, totalRemoved: number, files: any[] } | null} */
 let currentState = null;
 /** @type {Set<string>} */
 const expandedFiles = new Set();
@@ -121,7 +121,7 @@ function appendIcon(parent) {
 }
 
 /**
- * @param {{ enabled: boolean, ignorePatterns: string[], respectGitignore: boolean, clearOnBranchSwitch: boolean, quoteRotationInterval: number, useDiffEditor: boolean, showInlineDecorations: boolean, totalFiles: number, totalAdded: number, totalRemoved: number, files: any[] }} state
+ * @param {{ enabled: boolean, ignorePatterns: string[], respectGitignore: boolean, clearOnBranchSwitch: boolean, quoteRotationInterval: number, useDiffEditor: boolean, showInlineDecorations: boolean, showDiffHeaderButtons: boolean, dynamicRendering: boolean, showPerfTrace: boolean, diffCodeLensEnabled: boolean, totalFiles: number, totalAdded: number, totalRemoved: number, files: any[] }} state
  */
 function render(state) {
   if (!app) return;
@@ -196,7 +196,7 @@ function renderIdleScreen(quoteRotationInterval) {
 }
 
 /**
- * @param {{ ignorePatterns: string[], respectGitignore: boolean, clearOnBranchSwitch: boolean, quoteRotationInterval: number, useDiffEditor: boolean, showInlineDecorations: boolean }} state
+ * @param {{ ignorePatterns: string[], respectGitignore: boolean, clearOnBranchSwitch: boolean, quoteRotationInterval: number, useDiffEditor: boolean, showInlineDecorations: boolean, showDiffHeaderButtons: boolean, dynamicRendering: boolean, showPerfTrace: boolean, diffCodeLensEnabled: boolean }} state
  */
 function renderSettingsScreen(state) {
   if (!app) return;
@@ -301,6 +301,69 @@ function renderSettingsScreen(state) {
   diffEditorDescRow.appendChild(el('span', 'settings-check-desc', 'Clicking files or hunks in the panel opens a diff view (baseline vs current) instead of the inline editor'));
   diffEditorRow.appendChild(diffEditorDescRow);
   appearanceSection.appendChild(diffEditorRow);
+
+  // Warn when VSCode's diff-editor CodeLens setting would hide the
+  // Accept/Discard links in diff views
+  if (state.useDiffEditor && !state.diffCodeLensEnabled) {
+    const codeLensWarn = el('div', 'settings-check-desc-row');
+    codeLensWarn.style.color = 'var(--vscode-editorWarning-foreground, #cca700)';
+    codeLensWarn.style.margin = '2px 0 6px 0';
+    codeLensWarn.appendChild(el('span', undefined,
+      '⚠ The VSCode setting "Diff Editor: Code Lens" is off, so Accept/Discard links will not appear in diff views.'));
+    appearanceSection.appendChild(codeLensWarn);
+  }
+
+  // Show diff header buttons
+  const diffButtonsRow = el('label', 'settings-check-row');
+  diffButtonsRow.appendChild(el('span', 'settings-check-label', 'Show diff header buttons'));
+  const diffButtonsDescRow = el('div', 'settings-check-desc-row');
+  const diffButtonsCheckbox = /** @type {HTMLInputElement} */ (document.createElement('input'));
+  diffButtonsCheckbox.type = 'checkbox';
+  diffButtonsCheckbox.className = 'settings-checkbox';
+  diffButtonsCheckbox.checked = state.showDiffHeaderButtons;
+  diffButtonsCheckbox.addEventListener('change', () => {
+    vscode.postMessage({ command: 'setShowDiffHeaderButtons', value: diffButtonsCheckbox.checked });
+  });
+  diffButtonsDescRow.appendChild(diffButtonsCheckbox);
+  diffButtonsDescRow.appendChild(el('span', 'settings-check-desc', 'Show Accept All / Discard All buttons in the diff editor title bar'));
+  diffButtonsRow.appendChild(diffButtonsDescRow);
+  appearanceSection.appendChild(diffButtonsRow);
+
+  // ── Experiments ──
+  const experimentsSection = el('div', 'settings-section');
+  experimentsSection.appendChild(el('div', 'settings-section-title', 'Experiments'));
+
+  // Dynamic rendering performance
+  const dynRenderRow = el('label', 'settings-check-row');
+  dynRenderRow.appendChild(el('span', 'settings-check-label', 'Dynamic rendering performance (experimental)'));
+  const dynRenderDescRow = el('div', 'settings-check-desc-row');
+  const dynRenderCheckbox = /** @type {HTMLInputElement} */ (document.createElement('input'));
+  dynRenderCheckbox.type = 'checkbox';
+  dynRenderCheckbox.className = 'settings-checkbox';
+  dynRenderCheckbox.checked = state.dynamicRendering;
+  dynRenderCheckbox.addEventListener('change', () => {
+    vscode.postMessage({ command: 'setDynamicRendering', value: dynRenderCheckbox.checked });
+  });
+  dynRenderDescRow.appendChild(dynRenderCheckbox);
+  dynRenderDescRow.appendChild(el('span', 'settings-check-desc', 'Render inline controls in the viewport first and stream the rest in as you scroll. Much faster in files with many changes; may cause slight content shifts when scrolling up.'));
+  dynRenderRow.appendChild(dynRenderDescRow);
+  experimentsSection.appendChild(dynRenderRow);
+
+  // Performance trace logging
+  const perfTraceRow = el('label', 'settings-check-row');
+  perfTraceRow.appendChild(el('span', 'settings-check-label', 'Show performance trace logging'));
+  const perfTraceDescRow = el('div', 'settings-check-desc-row');
+  const perfTraceCheckbox = /** @type {HTMLInputElement} */ (document.createElement('input'));
+  perfTraceCheckbox.type = 'checkbox';
+  perfTraceCheckbox.className = 'settings-checkbox';
+  perfTraceCheckbox.checked = state.showPerfTrace;
+  perfTraceCheckbox.addEventListener('change', () => {
+    vscode.postMessage({ command: 'setShowPerfTrace', value: perfTraceCheckbox.checked });
+  });
+  perfTraceDescRow.appendChild(perfTraceCheckbox);
+  perfTraceDescRow.appendChild(el('span', 'settings-check-desc', 'Write PERF_MEASURE rendering timings to the Hunkwise output channel'));
+  perfTraceRow.appendChild(perfTraceDescRow);
+  experimentsSection.appendChild(perfTraceRow);
   appearanceSection.appendChild(rotationRow);
 
   // ── Exclude Patterns ──
@@ -353,6 +416,7 @@ function renderSettingsScreen(state) {
   body.appendChild(appearanceSection);
   body.appendChild(patternSection);
   body.appendChild(gitignoreSection);
+  body.appendChild(experimentsSection);
 
   // ── Disable ──
   const disableSection = el('div', 'settings-section settings-section-danger');

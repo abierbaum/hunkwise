@@ -137,6 +137,9 @@ function insetCacheKey(afterLine: number, height: number): string {
 export class DecorationManager {
   // editorKey → ordered list of insets for that editor
   private insets: Map<string, HunkInset[]> = new Map();
+  // editorKey → queued offscreen inset creations, drained in batches.
+  // timer is undefined while remaining items are parked awaiting scroll promotion.
+  private pendingCreations: Map<string, { timer: ReturnType<typeof setTimeout> | undefined; queue: { spec: { afterLine: number; height: number; html: string; hunkId?: string }; key: string }[] }> = new Map();
   private onAction: ((command: 'accept' | 'discard' | 'prev' | 'next', filePath: string, hunkId: string) => void) | undefined;
 
   constructor(
@@ -146,11 +149,34 @@ export class DecorationManager {
     this.onAction = onAction;
   }
 
+  // Insets are per-editor, so the same document split across editors gets an
+  // independent inset set per view column.
+  private editorKeyFor(editor: vscode.TextEditor): string {
+    return `${editor.document.uri.toString()}#${editor.viewColumn ?? 'x'}`;
+  }
+
+  private findEditor(editorKey: string): vscode.TextEditor | undefined {
+    return vscode.window.visibleTextEditors.find(e => this.editorKeyFor(e) === editorKey);
+  }
+
   refresh(editors?: readonly vscode.TextEditor[]): void {
     const targets = editors ?? vscode.window.visibleTextEditors;
     const diffPaths = this.diffEditorFilePaths();
     for (const editor of targets) {
       this.applyToEditor(editor, diffPaths);
+    }
+    if (!editors) {
+      // Full refresh — prune state for editors that are no longer visible
+      const validKeys = new Set(vscode.window.visibleTextEditors.map(e => this.editorKeyFor(e)));
+      for (const key of [...this.insets.keys()]) {
+        if (!validKeys.has(key)) {
+          this.disposeInsetList(this.insets.get(key) ?? []);
+          this.insets.delete(key);
+        }
+      }
+      for (const key of [...this.pendingCreations.keys()]) {
+        if (!validKeys.has(key)) this.cancelPendingCreations(key);
+      }
     }
   }
 
@@ -181,7 +207,7 @@ export class DecorationManager {
 
   private applyToEditor(editor: vscode.TextEditor, diffPaths: Set<string>): void {
     const filePath = editor.document.uri.fsPath;
-    const editorKey = editor.document.uri.toString();
+    const editorKey = this.editorKeyFor(editor);
     const fileState = this.stateManager.getFile(filePath);
 
     // Skip insets: in diff editors (viewColumn undefined), or when user disabled inline decorations
@@ -189,6 +215,7 @@ export class DecorationManager {
     const skipInsets = isInDiff || !this.stateManager.showInlineDecorations;
 
     if (!fileState || fileState.status !== 'reviewing' || skipInsets) {
+      this.cancelPendingCreations(editorKey);
       this.disposeInsetList(this.insets.get(editorKey) ?? []);
       this.insets.delete(editorKey);
       editor.setDecorations(addedLineDecoration, []);
@@ -315,6 +342,13 @@ export class DecorationManager {
       Number(isVisible(specs[b].afterLine)) - Number(isVisible(specs[a].afterLine)) || a - b
     );
 
+    // Creating many webviews at once floods the renderer and stalls the
+    // extension-host RPC channel (blank action bars, slow saves). Visible
+    // insets are created synchronously; offscreen ones are queued and
+    // created in small batches. A newer refresh cancels the pending queue.
+    this.cancelPendingCreations(editorKey);
+    const deferred: { spec: InsetSpec; key: string }[] = [];
+
     for (const idx of order) {
       const spec = specs[idx];
       const key = insetCacheKey(spec.afterLine, spec.height);
@@ -329,11 +363,12 @@ export class DecorationManager {
         prev.hunkId = spec.hunkId;
         nextInsets.push(prev);
         reusedCount++;
-      } else {
-        // Position changed or inset was disposed by VSCode — recreate
+      } else if (!this.stateManager.dynamicRendering || isVisible(spec.afterLine)) {
         const created = this.makeInset(editorKey, editor, spec.afterLine, spec.height, spec.html, key, spec.hunkId);
         if (created) nextInsets.push(created);
         createdCount++;
+      } else {
+        deferred.push({ spec, key });
       }
     }
 
@@ -347,8 +382,8 @@ export class DecorationManager {
       }
     }
 
-    if (specs.length > 0 || disposedCount > 0) {
-      log(`PERF_MEASURE refresh(${path.basename(filePath)}): hunks=${parsed.length} insets reused=${reusedCount} reloaded=${reloadedCount} created=${createdCount} disposed=${disposedCount} sync=${Date.now() - perfStart}ms`);
+    if (this.stateManager.showPerfTrace && (specs.length > 0 || disposedCount > 0)) {
+      log(`PERF_MEASURE refresh(${path.basename(filePath)}): hunks=${parsed.length} insets reused=${reusedCount} reloaded=${reloadedCount} created=${createdCount} deferred=${deferred.length} disposed=${disposedCount} sync=${Date.now() - perfStart}ms`);
     }
 
     editor.setDecorations(addedLineDecoration, addedRanges);
@@ -357,6 +392,106 @@ export class DecorationManager {
     } else {
       this.insets.delete(editorKey);
     }
+    if (deferred.length > 0) {
+      this.schedulePendingCreations(editorKey, deferred);
+    }
+  }
+
+  /**
+   * Immediately create any queued insets that entered the viewport (+margin).
+   * Called on visible-range changes so scrolling or jump-to-symbol never
+   * waits on the background drain.
+   */
+  promoteVisible(editor: vscode.TextEditor): void {
+    const editorKey = this.editorKeyFor(editor);
+    const pending = this.pendingCreations.get(editorKey);
+    if (!pending || pending.queue.length === 0) return;
+
+    const MARGIN = 30;
+    const ranges = editor.visibleRanges;
+    const isVisible = (line: number) => ranges.some(
+      r => line >= r.start.line - MARGIN && line <= r.end.line + MARGIN
+    );
+    const promote = pending.queue.filter(item => isVisible(item.spec.afterLine));
+    if (promote.length === 0) return;
+    pending.queue = pending.queue.filter(item => !isVisible(item.spec.afterLine));
+
+    const list = this.insets.get(editorKey) ?? [];
+    for (const { spec, key } of promote) {
+      const created = this.makeInset(editorKey, editor, spec.afterLine, spec.height, spec.html, key, spec.hunkId);
+      if (created) list.push(created);
+    }
+    this.insets.set(editorKey, list);
+    if (this.stateManager.showPerfTrace) {
+      log(`PERF_MEASURE promote(${editorKey.split('/').pop()}): ${promote.length} inset(s) promoted, ${pending.queue.length} still queued`);
+    }
+
+    if (pending.queue.length === 0) {
+      if (pending.timer !== undefined) clearTimeout(pending.timer);
+      this.pendingCreations.delete(editorKey);
+    }
+  }
+
+  private cancelPendingCreations(editorKey: string): void {
+    const pending = this.pendingCreations.get(editorKey);
+    if (pending) {
+      if (pending.timer !== undefined) clearTimeout(pending.timer);
+      this.pendingCreations.delete(editorKey);
+    }
+  }
+
+  private schedulePendingCreations(editorKey: string, queue: { spec: { afterLine: number; height: number; html: string; hunkId?: string }; key: string }[]): void {
+    const BATCH_SIZE = 10;
+    const BATCH_DELAY = 50;
+    // Hold offscreen creations so visible insets have the renderer to
+    // themselves — webview paint latency scales with in-flight creations
+    // (measured: first button 280ms when the renderer gets only the viewport
+    // batch vs ~2s when everything is queued at once). Scrolling into queued
+    // regions promotes those insets immediately via promoteVisible().
+    const INITIAL_DELAY = 1500;
+    const MARGIN = 30;
+    const drain = (): void => {
+      const pending = this.pendingCreations.get(editorKey);
+      if (!pending) return;
+      pending.timer = undefined;
+      const editor = this.findEditor(editorKey);
+      if (!editor) {
+        this.pendingCreations.delete(editorKey);
+        return;
+      }
+
+      // Only create insets below the viewport: an inset above the visible
+      // region pushes the text the user is reading down (the inset API does
+      // no scroll compensation). Above-viewport items stay parked until the
+      // user scrolls toward them and promoteVisible() creates them.
+      const bottom = Math.max(0, ...editor.visibleRanges.map(r => r.end.line)) + MARGIN;
+      const below: typeof pending.queue = [];
+      const parked: typeof pending.queue = [];
+      for (const item of pending.queue) {
+        (item.spec.afterLine > bottom ? below : parked).push(item);
+      }
+      const batch = below.slice(0, BATCH_SIZE);
+      pending.queue = parked.concat(below.slice(BATCH_SIZE));
+
+      const list = this.insets.get(editorKey) ?? [];
+      for (const { spec, key } of batch) {
+        const created = this.makeInset(editorKey, editor, spec.afterLine, spec.height, spec.html, key, spec.hunkId);
+        if (created) list.push(created);
+      }
+      this.insets.set(editorKey, list);
+
+      if (below.length > BATCH_SIZE) {
+        pending.timer = setTimeout(drain, BATCH_DELAY);
+      } else if (pending.queue.length === 0) {
+        this.pendingCreations.delete(editorKey);
+        if (this.stateManager.showPerfTrace) {
+          log(`PERF_MEASURE drain(${editorKey.split('/').pop()}): offscreen inset creation complete`);
+        }
+      } else if (this.stateManager.showPerfTrace) {
+        log(`PERF_MEASURE drain(${editorKey.split('/').pop()}): ${pending.queue.length} above-viewport inset(s) parked for scroll promotion`);
+      }
+    };
+    this.pendingCreations.set(editorKey, { timer: setTimeout(drain, INITIAL_DELAY), queue });
   }
 
   private makeInset(
@@ -377,7 +512,9 @@ export class DecorationManager {
       const disposable = inset.webview.onDidReceiveMessage((msg: any) => {
         if (msg.command === 'ready') {
           // Sent on every webview load/reload
-          log(`PERF_MEASURE ready(${entry.hunkId}): action bar rendered`);
+          if (this.stateManager.showPerfTrace) {
+            log(`PERF_MEASURE ready(${entry.hunkId}): action bar rendered`);
+          }
           return;
         }
         if (msg.command === 'accept' || msg.command === 'discard' || msg.command === 'prev' || msg.command === 'next') {
@@ -391,9 +528,7 @@ export class DecorationManager {
         disposeListener: inset.onDidDispose(() => {
           entry.disposed = true;
           // Re-apply if editor is still visible so insets are immediately rebuilt
-          const targetEditor = vscode.window.visibleTextEditors.find(
-            e => e.document.uri.toString() === editorKey
-          );
+          const targetEditor = this.findEditor(editorKey);
           if (targetEditor) this.applyToEditor(targetEditor, this.diffEditorFilePaths());
         }),
       };
@@ -406,6 +541,10 @@ export class DecorationManager {
 
   dispose(): void {
     addedLineDecoration.dispose();
+    for (const pending of this.pendingCreations.values()) {
+      if (pending.timer !== undefined) clearTimeout(pending.timer);
+    }
+    this.pendingCreations.clear();
     for (const list of this.insets.values()) {
       this.disposeInsetList(list);
     }

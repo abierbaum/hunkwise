@@ -43,6 +43,24 @@ export function registerCommands(
       );
       onStateChanged();
     }),
+    // Open all reviewing files in the native multi-diff editor.
+    // Each entry diffs the hunkwise baseline against the real file on disk,
+    // so the modified side is editable and gets the diff gutter revert arrows.
+    vscode.commands.registerCommand('hunkwise.reviewAllDiffs', async () => {
+      const resources: [vscode.Uri, vscode.Uri, vscode.Uri][] = [];
+      for (const [filePath, fileState] of stateManager.getAllFiles()) {
+        if (fileState.status !== 'reviewing') continue;
+        if (!fs.existsSync(filePath)) continue; // deleted files keep their own diff flow
+        const fileUri = vscode.Uri.file(filePath);
+        const baselineUri = fileUri.with({ scheme: 'hunkwise-baseline' });
+        resources.push([fileUri, baselineUri, fileUri]);
+      }
+      if (resources.length === 0) {
+        void vscode.window.showInformationMessage('hunkwise: no pending changes to review.');
+        return;
+      }
+      await vscode.commands.executeCommand('vscode.changes', 'hunkwise: Pending Changes', resources);
+    }),
   );
 }
 

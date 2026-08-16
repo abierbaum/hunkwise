@@ -42,9 +42,52 @@
         "command": "hunkwise.refresh",
         "title": "hunkwise: Refresh State",
         "icon": "$(refresh)"
+      },
+      {
+        "command": "hunkwise.reviewAllDiffs",
+        "title": "hunkwise: Review All Changes (Multi-Diff)",
+        "icon": "$(diff-multiple)"
+      },
+      {
+        "command": "hunkwise.diffAcceptFile",
+        "title": "hunkwise: Accept All Changes in File",
+        "icon": {
+          "light": "media/accept-check.svg",
+          "dark": "media/accept-check.svg"
+        }
+      },
+      {
+        "command": "hunkwise.diffDiscardFile",
+        "title": "hunkwise: Discard All Changes in File",
+        "icon": {
+          "light": "media/discard-x.svg",
+          "dark": "media/discard-x.svg"
+        }
+      },
+      {
+        "command": "hunkwise.diffPrevFile",
+        "title": "hunkwise: Previous Pending File",
+        "icon": "$(arrow-up)"
+      },
+      {
+        "command": "hunkwise.diffNextFile",
+        "title": "hunkwise: Next Pending File",
+        "icon": "$(arrow-down)"
       }
     ],
     "menus": {
+      "editor/title": [
+        {
+          "command": "hunkwise.diffAcceptFile",
+          "when": "hunkwise.activeDiff",
+          "group": "navigation@6"
+        },
+        {
+          "command": "hunkwise.diffDiscardFile",
+          "when": "hunkwise.activeDiff",
+          "group": "navigation@6"
+        }
+      ],
       "view/title": [
         {
           "command": "hunkwise.refresh",

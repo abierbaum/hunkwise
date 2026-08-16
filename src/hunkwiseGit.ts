@@ -13,6 +13,9 @@ interface Settings {
   quoteRotationInterval: number;
   useDiffEditor: boolean;
   showInlineDecorations: boolean;
+  showDiffHeaderButtons: boolean;
+  dynamicRendering: boolean;
+  showPerfTrace: boolean;
 }
 
 const DEFAULT_SETTINGS: Settings = {
@@ -22,6 +25,9 @@ const DEFAULT_SETTINGS: Settings = {
   quoteRotationInterval: 30,
   useDiffEditor: false,
   showInlineDecorations: true,
+  showDiffHeaderButtons: true,
+  dynamicRendering: true,
+  showPerfTrace: false,
 };
 
 /**
@@ -99,6 +105,15 @@ export class HunkwiseGit {
         showInlineDecorations: typeof parsed.showInlineDecorations === 'boolean'
           ? parsed.showInlineDecorations
           : DEFAULT_SETTINGS.showInlineDecorations,
+        showDiffHeaderButtons: typeof parsed.showDiffHeaderButtons === 'boolean'
+          ? parsed.showDiffHeaderButtons
+          : DEFAULT_SETTINGS.showDiffHeaderButtons,
+        dynamicRendering: typeof parsed.dynamicRendering === 'boolean'
+          ? parsed.dynamicRendering
+          : DEFAULT_SETTINGS.dynamicRendering,
+        showPerfTrace: typeof parsed.showPerfTrace === 'boolean'
+          ? parsed.showPerfTrace
+          : DEFAULT_SETTINGS.showPerfTrace,
       };
     } catch {
       return { ...DEFAULT_SETTINGS, ignorePatterns: [...DEFAULT_SETTINGS.ignorePatterns] };
