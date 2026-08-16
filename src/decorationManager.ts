@@ -119,6 +119,9 @@ interface HunkInset {
   disposeListener: vscode.Disposable;
   // Cache key: used to detect whether this inset can be reused
   cacheKey: string;
+  // Last html assigned — reassigning webview.html reloads the iframe, so
+  // assignment is skipped when unchanged.
+  html: string;
   disposed: boolean;
 }
 
@@ -269,23 +272,41 @@ export class DecorationManager {
       });
     }
 
-    // Reuse existing insets when cache keys match to avoid flicker
+    // Reuse existing insets when cache keys match to avoid flicker.
+    // Matched by position key, not array index, so removing one hunk doesn't
+    // invalidate every inset after it.
     const existing = this.insets.get(editorKey) ?? [];
     const nextInsets: HunkInset[] = [];
     const perfStart = Date.now();
     let reusedCount = 0;
+    let reloadedCount = 0;
     let createdCount = 0;
     let disposedCount = 0;
 
-    for (let i = 0; i < specs.length; i++) {
-      const spec = specs[i];
+    // Pool existing insets by cache key. Order within a key is preserved:
+    // insets sharing an afterLine stack first-created-on-top.
+    const pool = new Map<string, HunkInset[]>();
+    for (const prev of existing) {
+      if (prev.disposed) {
+        prev.disposeListener.dispose();
+        prev.disposable.dispose();
+        continue;
+      }
+      const list = pool.get(prev.cacheKey);
+      if (list) { list.push(prev); } else { pool.set(prev.cacheKey, [prev]); }
+    }
+
+    for (const spec of specs) {
       const key = insetCacheKey(spec.afterLine, spec.height);
-      const prev = existing[i];
-      if (prev && prev.cacheKey === key && !prev.disposed) {
-        // Same position/height and still alive — reuse, just update html
-        prev.inset.webview.html = spec.html;
+      const prev = pool.get(key)?.shift();
+      if (prev) {
+        // Reuse; reassign html only when changed (assignment reloads the iframe)
+        if (prev.html !== spec.html) {
+          prev.inset.webview.html = spec.html;
+          prev.html = spec.html;
+          reloadedCount++;
+        }
         nextInsets.push(prev);
-        existing[i] = undefined as any; // mark as consumed
         reusedCount++;
       } else {
         // Position changed or inset was disposed by VSCode — recreate
@@ -296,8 +317,8 @@ export class DecorationManager {
     }
 
     // Dispose leftover insets not reused
-    for (const leftover of existing) {
-      if (leftover) {
+    for (const list of pool.values()) {
+      for (const leftover of list) {
         leftover.disposeListener.dispose();
         leftover.disposable.dispose();
         if (!leftover.disposed) leftover.inset.dispose();
@@ -306,7 +327,7 @@ export class DecorationManager {
     }
 
     if (specs.length > 0 || disposedCount > 0) {
-      log(`PERF_MEASURE refresh(${path.basename(filePath)}): hunks=${parsed.length} insets reused=${reusedCount} created=${createdCount} disposed=${disposedCount} sync=${Date.now() - perfStart}ms`);
+      log(`PERF_MEASURE refresh(${path.basename(filePath)}): hunks=${parsed.length} insets reused=${reusedCount} reloaded=${reloadedCount} created=${createdCount} disposed=${disposedCount} sync=${Date.now() - perfStart}ms`);
     }
 
     editor.setDecorations(addedLineDecoration, addedRanges);
@@ -341,7 +362,7 @@ export class DecorationManager {
         }
       });
       const entry: HunkInset = {
-        inset, disposable, cacheKey, disposed: false,
+        inset, disposable, cacheKey, html, disposed: false,
         disposeListener: inset.onDidDispose(() => {
           entry.disposed = true;
           // Re-apply if editor is still visible so insets are immediately rebuilt
