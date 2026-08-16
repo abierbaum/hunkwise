@@ -303,7 +303,20 @@ export class DecorationManager {
       if (list) { list.push(prev); } else { pool.set(prev.cacheKey, [prev]); }
     }
 
-    for (const spec of specs) {
+    // Create viewport-visible insets first so their webviews render before
+    // offscreen ones. Stable order within equal visibility preserves the
+    // same-afterLine stacking order.
+    const VISIBLE_MARGIN = 30;
+    const visibleRanges = editor.visibleRanges;
+    const isVisible = (line: number) => visibleRanges.some(
+      r => line >= r.start.line - VISIBLE_MARGIN && line <= r.end.line + VISIBLE_MARGIN
+    );
+    const order = specs.map((_, i) => i).sort((a, b) =>
+      Number(isVisible(specs[b].afterLine)) - Number(isVisible(specs[a].afterLine)) || a - b
+    );
+
+    for (const idx of order) {
+      const spec = specs[idx];
       const key = insetCacheKey(spec.afterLine, spec.height);
       const prev = pool.get(key)?.shift();
       if (prev) {
