@@ -137,8 +137,9 @@ function insetCacheKey(afterLine: number, height: number): string {
 export class DecorationManager {
   // editorKey → ordered list of insets for that editor
   private insets: Map<string, HunkInset[]> = new Map();
-  // editorKey → queued offscreen inset creations, drained in batches
-  private pendingCreations: Map<string, { timer: ReturnType<typeof setTimeout>; queue: { spec: { afterLine: number; height: number; html: string; hunkId?: string }; key: string }[] }> = new Map();
+  // editorKey → queued offscreen inset creations, drained in batches.
+  // timer is undefined while remaining items are parked awaiting scroll promotion.
+  private pendingCreations: Map<string, { timer: ReturnType<typeof setTimeout> | undefined; queue: { spec: { afterLine: number; height: number; html: string; hunkId?: string }; key: string }[] }> = new Map();
   private onAction: ((command: 'accept' | 'discard' | 'prev' | 'next', filePath: string, hunkId: string) => void) | undefined;
 
   constructor(
@@ -401,7 +402,7 @@ export class DecorationManager {
     log(`PERF_MEASURE promote(${editorKey.split('/').pop()}): ${promote.length} inset(s) promoted, ${pending.queue.length} still queued`);
 
     if (pending.queue.length === 0) {
-      clearTimeout(pending.timer);
+      if (pending.timer !== undefined) clearTimeout(pending.timer);
       this.pendingCreations.delete(editorKey);
     }
   }
@@ -409,7 +410,7 @@ export class DecorationManager {
   private cancelPendingCreations(editorKey: string): void {
     const pending = this.pendingCreations.get(editorKey);
     if (pending) {
-      clearTimeout(pending.timer);
+      if (pending.timer !== undefined) clearTimeout(pending.timer);
       this.pendingCreations.delete(editorKey);
     }
   }
@@ -423,9 +424,11 @@ export class DecorationManager {
     // batch vs ~2s when everything is queued at once). Scrolling into queued
     // regions promotes those insets immediately via promoteVisible().
     const INITIAL_DELAY = 1500;
+    const MARGIN = 30;
     const drain = (): void => {
       const pending = this.pendingCreations.get(editorKey);
       if (!pending) return;
+      pending.timer = undefined;
       const editor = vscode.window.visibleTextEditors.find(
         e => e.document.uri.toString() === editorKey
       );
@@ -433,18 +436,34 @@ export class DecorationManager {
         this.pendingCreations.delete(editorKey);
         return;
       }
-      const batch = pending.queue.splice(0, BATCH_SIZE);
+
+      // Only create insets below the viewport: an inset above the visible
+      // region pushes the text the user is reading down (the inset API does
+      // no scroll compensation). Above-viewport items stay parked until the
+      // user scrolls toward them and promoteVisible() creates them.
+      const bottom = Math.max(0, ...editor.visibleRanges.map(r => r.end.line)) + MARGIN;
+      const below: typeof pending.queue = [];
+      const parked: typeof pending.queue = [];
+      for (const item of pending.queue) {
+        (item.spec.afterLine > bottom ? below : parked).push(item);
+      }
+      const batch = below.slice(0, BATCH_SIZE);
+      pending.queue = parked.concat(below.slice(BATCH_SIZE));
+
       const list = this.insets.get(editorKey) ?? [];
       for (const { spec, key } of batch) {
         const created = this.makeInset(editorKey, editor, spec.afterLine, spec.height, spec.html, key, spec.hunkId);
         if (created) list.push(created);
       }
       this.insets.set(editorKey, list);
-      if (pending.queue.length > 0) {
+
+      if (below.length > BATCH_SIZE) {
         pending.timer = setTimeout(drain, BATCH_DELAY);
-      } else {
+      } else if (pending.queue.length === 0) {
         this.pendingCreations.delete(editorKey);
         log(`PERF_MEASURE drain(${editorKey.split('/').pop()}): offscreen inset creation complete`);
+      } else {
+        log(`PERF_MEASURE drain(${editorKey.split('/').pop()}): ${pending.queue.length} above-viewport inset(s) parked for scroll promotion`);
       }
     };
     this.pendingCreations.set(editorKey, { timer: setTimeout(drain, INITIAL_DELAY), queue });
@@ -498,7 +517,7 @@ export class DecorationManager {
   dispose(): void {
     addedLineDecoration.dispose();
     for (const pending of this.pendingCreations.values()) {
-      clearTimeout(pending.timer);
+      if (pending.timer !== undefined) clearTimeout(pending.timer);
     }
     this.pendingCreations.clear();
     for (const list of this.insets.values()) {
